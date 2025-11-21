@@ -187,6 +187,11 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
                 files.append({'name':data['name'],'directurl':data['url']})
         bot.deleteMessage(message.chat.id,message.message_id)
         finishInfo = infos.createFinishUploading(file,file_size,max_file_size,file_upload_count,file_upload_count,findex)
+        # MODIFICAR ENLACES para que tengan /webservice
+for i in range(len(files)):
+    url = files[i]['directurl']
+    if 'aulacened.uci.cu' in url:
+        files[i]['directurl'] = url.replace('://aulacened.uci.cu/', '://aulacened.uci.cu/webservice/')
         filesInfo = infos.createFileMsg(file,files)
         bot.sendMessage(message.chat.id,finishInfo+'\n'+filesInfo,parse_mode='html')
         if len(files)>0:

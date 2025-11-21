@@ -29,13 +29,13 @@ class JsonDatabase(object):
     def create_user(self,name):
         self.items[name] = {'dir': '',
                      'cloudtype': 'moodle',
-                     'moodle_host': '---',
-                     'moodle_repo_id': 4,
-                     'moodle_user': '---',
-                     'moodle_password': '---',
+                     'moodle_host': 'https://aulacened.uci.cu/',
+                     'moodle_repo_id': 5,
+                     'moodle_user': 'eliel21',
+                     'moodle_password': 'ElielThali15212115.',
                      'isadmin': 0,
                      'zips': 100,
-                     'uploadtype':'evidence',
+                     'uploadtype':'draft',
                      'proxy':'',
                      'tokenize':0}
 
@@ -81,4 +81,5 @@ class JsonDatabase(object):
             tokens = lin.split('=')
             user = tokens[0]
             data = json.loads(str(tokens[1]).replace("'", '"'))
+
             self.items[user] = data

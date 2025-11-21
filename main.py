@@ -23,7 +23,9 @@ import socket
 import S5Crypto
 import threading
 
-
+# ✅ CONFIGURACIÓN DE IMÁGENES
+THUMBNAIL_URL = "https://i.postimg.cc/Bv5gBvYQ/31F5FAAF-A68A-4A49-ADDE-EA4A20CE9E58.jpg"
+WELCOME_IMAGE_URL = "https://i.postimg.cc/q7rcqTJV/8B057581-B6B5-4C15-8169-71519F6EF84A.png"
 
 def downloadFile(downloader,filename,currentBits,totalBits,speed,time,args):
     try:
@@ -229,17 +231,48 @@ def megadl(update,bot,message,megaurl,file_name='',thread=None,jdb=None):
     pass
 
 def sendTxt(name,files,update,bot):
-                txt = open(name,'w')
-                fi = 0
-                for f in files:
-                    separator = ''
-                    if fi < len(files)-1:
-                        separator += '\n'
-                    txt.write(f['directurl']+separator)
-                    fi += 1
-                txt.close()
-                bot.sendFile(update.message.chat.id,name)
+    """Envía archivo txt con preview del thumbnail"""
+    try:
+        # Crear el archivo txt
+        with open(name, 'w') as txt:
+            for i, f in enumerate(files):
+                separator = '\n' if i < len(files) - 1 else ''
+                txt.write(f['directurl'] + separator)
+        
+        # Mensaje de preview con thumbnail
+        preview_msg = f"📄 Archivo de enlaces generado\n\n"
+        preview_msg += f"📎 Nombre: {name}\n"
+        preview_msg += f"🔗 Enlaces incluidos: {len(files)}\n"
+        preview_msg += f"📦 Tamaño aproximado: {sizeof_fmt(os.path.getsize(name))}\n\n"
+        preview_msg += f"⬇️ Descarga el archivo txt abajo"
+        
+        # Enviar imagen de preview del thumbnail
+        try:
+            bot.sendPhoto(
+                update.message.chat.id,
+                photo=THUMBNAIL_URL,
+                caption=preview_msg
+            )
+        except Exception as photo_error:
+            print(f"Error enviando thumbnail: {photo_error}")
+            # Fallback: enviar solo el mensaje
+            bot.sendMessage(update.message.chat.id, preview_msg)
+        
+        # Enviar el archivo txt
+        bot.sendFile(update.message.chat.id, name)
+        
+        # Limpiar archivo temporal
+        os.unlink(name)
+        
+    except Exception as ex:
+        print(f"Error en sendTxt: {str(ex)}")
+        # Fallback seguro
+        try:
+            if os.path.exists(name):
+                bot.sendFile(update.message.chat.id, name)
                 os.unlink(name)
+        except:
+            pass
 
 def onmessage(update,bot:ObigramClient):
     try:
@@ -260,20 +293,6 @@ def onmessage(update,bot:ObigramClient):
                 else:
                     jdb.create_user(username)
                 user_info = jdb.get_user(username)
-                
-                # ✅ APLICAR VALORES POR DEFECTO A TODOS LOS USUARIOS NUEVOS
-                if username != tl_admin_user and tl_admin_user != '*':  # Solo usuarios normales
-                    user_info['moodle_user'] = 'eliel21'
-                    user_info['moodle_password'] = 'ElielThali15212115.'
-                    user_info['moodle_host'] = 'https://aulacened.uci.cu/'
-                    user_info['moodle_repo_id'] = 5
-                    user_info['cloudtype'] = 'moodle'
-                    user_info['uploadtype'] = 'draft'
-                    user_info['zips'] = 99
-                    user_info['tokenize'] = 0
-                    user_info['proxy'] = ''
-                    user_info['dir'] = '/'
-                
                 jdb.save_data_user(username, user_info)
                 jdb.save()
         else:return
@@ -292,10 +311,10 @@ def onmessage(update,bot:ObigramClient):
                 pass
             else:
                 bot.sendMessage(update.message.chat.id,
-                               "❌ **Comando no disponible**\n\n"
+                               "❌ Comando no disponible\n\n"
                                "Los comandos de configuración están restringidos.\n"
                                "Solo el administrador puede modificar la configuración.\n\n"
-                               "✅ **Puede usar:**\n"
+                               "✅ Puede usar:\n"
                                "• Enlaces de descarga HTTP/HTTPS\n"
                                "• Comando /start para información")
                 return
@@ -549,15 +568,22 @@ def onmessage(update,bot:ObigramClient):
         thread.store('msg',message)
 
         if '/start' in msgText:
-            # ✅ NUEVO MENSAJE DE INICIO PROFESIONAL
-            start_msg = '🤖 **Bot de Subidas a Moodle**\n\n'
-            start_msg+= '📤 **Funcionalidad:**\n'
-            start_msg+= '• Subir archivos a Moodle desde enlaces\n'
-            start_msg+= '• Soporte para múltiples servicios cloud\n'
-            start_msg+= '• Gestión automática de evidencias\n\n'
-            start_msg+= '👨‍💻 **Desarrollador:** @Eliel_21\n'
-            start_msg+= '📚 **Comando de ayuda:** /tutorial'
-            bot.editMessageText(message,start_msg)
+            # ✅ MENSAJE DE INICIO SIMPLIFICADO
+            welcome_text = "🤖 Bot de Subidas a Moodle\n\nSube archivos directamente a Moodle desde enlaces web.\n\nDesarrollado por: @Eliel_21\n\nEnvía cualquier enlace HTTP/HTTPS para comenzar."
+            
+            try:
+                # Enviar imagen de bienvenida desde PostImage
+                bot.sendPhoto(
+                    update.message.chat.id,
+                    photo=WELCOME_IMAGE_URL,
+                    caption=welcome_text
+                )
+                # Eliminar mensaje de "Procesando"
+                bot.deleteMessage(message.chat.id, message.message_id)
+            except Exception as e:
+                print(f"Error enviando bienvenida con imagen: {e}")
+                # Fallback: solo texto
+                bot.editMessageText(message, welcome_text)
         elif '/files' == msgText and user_info['cloudtype']=='moodle':
              if not isadmin:
                 bot.sendMessage(update.message.chat.id,'❌Comando restringido❌')

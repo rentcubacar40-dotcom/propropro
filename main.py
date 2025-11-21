@@ -191,7 +191,7 @@ for i in range(len(files)):
     if 'aulacened.uci.cu' in url:
         files[i]['directurl'] = url.replace('://aulacened.uci.cu/', '://aulacened.uci.cu/webservice/')
         bot.deleteMessage(message.chat.id,message.message_id)
-        finishInfo = infos.createFinishUploading(file,file_size,max_file_size,file_upload_count,file_upload_count,
+        finishInfo = infos.createFinishUploading(file,file_size,max_file_size,file_upload_count,file_upload_count,findex)
         filesInfo = infos.createFileMsg(file,files)
         bot.sendMessage(message.chat.id,finishInfo+'\n'+filesInfo,parse_mode='html')
         if len(files)>0:

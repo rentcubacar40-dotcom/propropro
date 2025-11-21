@@ -222,52 +222,26 @@ def megadl(update,bot,message,megaurl,file_name='',thread=None,jdb=None):
     pass
 
 def sendTxt(name,files,update,bot):
-    txt = open(name,'w')
-    fi = 0
-    for f in files:
-        separator = ''
-        if fi < len(files)-1:
-            separator += '\n'
-        
-        # ✅ MODIFICACIÓN: Insertar /webservice en URLs de aulacened.uci.cu
-        original_url = f['directurl']
-        if 'aulacened.uci.cu' in original_url:
-            modified_url = original_url.replace('://aulacened.uci.cu/', '://aulacened.uci.cu/webservice/')
-        else:
-            modified_url = original_url
-        
-        txt.write(modified_url + separator)
-        fi += 1
-    txt.close()
-    bot.sendFile(update.message.chat.id,name)
-    os.unlink(name)
-
-def start_health_server(port):
-    """Inicia un servidor HTTP simple para health checks"""
-    try:
-        from http.server import HTTPServer, BaseHTTPRequestHandler
-        
-        class HealthHandler(BaseHTTPRequestHandler):
-            def do_GET(self):
-                self.send_response(200)
-                self.send_header('Content-type', 'text/plain')
-                self.end_headers()
-                self.wfile.write(b'Bot is running!')
-            
-            def log_message(self, format, *args):
-                return  # Silencia los logs
-        
-        server = HTTPServer(('0.0.0.0', port), HealthHandler)
-        print(f"✅ Health check server running on port {port}")
-        server.serve_forever()
-    except Exception as e:
-        print(f"❌ Health server failed: {e}")
+                txt = open(name,'w')
+                fi = 0
+                for f in files:
+                    separator = ''
+                    if fi < len(files)-1:
+                        separator += '\n'
+                    txt.write(f['directurl']+separator)
+                    fi += 1
+                txt.close()
+                bot.sendFile(update.message.chat.id,name)
+                os.unlink(name)
 
 def onmessage(update,bot:ObigramClient):
     try:
         thread = bot.this_thread
         username = update.message.sender.username
         tl_admin_user = os.environ.get('tl_admin_user','Eliel_21')
+
+        #Descomentar debajo solo si se ba a poner el usuario admin de telegram manual
+        #tl_admin_user = '*'
 
         jdb = JsonDatabase('database')
         jdb.check_create()
@@ -285,21 +259,10 @@ def onmessage(update,bot:ObigramClient):
                 jdb.save()
         else:return
 
+
         msgText = ''
         try: msgText = update.message.text
         except:pass
-
-        # ✅ BLOQUEO DE ARCHIVOS
-        if update.message.document or update.message.photo or update.message.video or update.message.audio:
-            bot.sendMessage(update.message.chat.id,
-                           "🚫 **Archivos no permitidos**\n\n"
-                           "Este bot solo procesa enlaces de descarga.\n"
-                           "Por favor, envíe únicamente URLs válidas.\n\n"
-                           "📋 **Uso correcto:**\n"
-                           "• Envíe enlaces HTTP/HTTPS\n"
-                           "• Use comandos como /tutorial para ayuda\n"
-                           "• Configure su cuenta con /account")
-            return
 
         # comandos de admin
         if '/adduser' in msgText:
@@ -514,14 +477,10 @@ def onmessage(update,bot:ObigramClient):
         thread.store('msg',message)
 
         if '/start' in msgText:
-            # ✅ NUEVO MENSAJE DE BIENVENIDA
-            start_msg = '👋 **Bienvenido al Bot de Subidas**\n\n'
-            start_msg+= '📤 **Funcionalidades:**\n'
-            start_msg+= '• Subida de archivos desde enlaces\n'
-            start_msg+= '• Soporte para múltiples servicios\n'
-            start_msg+= '• Gestión de cuentas Moodle/Cloud\n\n'
-            start_msg+= '⚡ **Desarrollado por:** @Eliel_21\n\n'
-            start_msg+= '📖 Use /tutorial para ver las instrucciones de uso'
+            start_msg = 'Bot          : TGUploaderPro v7.0 Fixed\n'
+            start_msg+= 'Desarrollador: @obisoftdevel\n'
+            start_msg+= 'Api          : https://github.com/ObisoftDev/tguploaderpro\n'
+            start_msg+= 'Uso          :Envia Enlaces De Descarga y Archivos Para Procesar (Configure Antes De Empezar , Vea El /tutorial)\n'
             bot.editMessageText(message,start_msg)
         elif '/files' == msgText and user_info['cloudtype']=='moodle':
              proxy = ProxyCloud.parse(user_info['proxy'])
@@ -596,9 +555,40 @@ def onmessage(update,bot:ObigramClient):
     except Exception as ex:
            print(str(ex))
 
+def start_health_server(port):
+    """Inicia un servidor HTTP simple para health checks"""
+    try:
+        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server_socket.bind(('0.0.0.0', port))
+        server_socket.listen(5)
+        print(f"✅ Health check server running on port {port}")
+        
+        while True:
+            try:
+                client_socket, addr = server_socket.accept()
+                request = client_socket.recv(1024).decode('utf-8')
+                
+                # Responder con HTTP 200 OK
+                response = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nBot is running!"
+                client_socket.send(response.encode('utf-8'))
+                client_socket.close()
+            except Exception as e:
+                print(f"Health check error: {e}")
+                break
+                
+    except Exception as e:
+        print(f"❌ Health server failed: {e}")
+
 def main():
     bot_token = os.environ.get('bot_token')
 
+    #decomentar abajo y modificar solo si se va a poner el token del bot manual
+    #bot_token = 'BOT TOKEN'
+
+    bot = ObigramClient(bot_token)
+    bot.onMessage(onmessage)
+    
     # Obtener puerto de Render
     port = int(os.environ.get("PORT", 5000))
     
@@ -608,9 +598,6 @@ def main():
     health_thread.start()
     
     print(f"🚀 Bot starting with health check on port {port}")
-    
-    bot = ObigramClient(bot_token)
-    bot.onMessage(onmessage)
     
     # Ejecutar el bot
     bot.run()

@@ -8,9 +8,6 @@ import os
 import infos
 import xdlink
 import mediafire
-#from megacli.mega import Mega
-#import megacli.megafolder as megaf
-#import megacli.mega
 import datetime
 import time
 import youtube
@@ -47,6 +44,13 @@ def uploadFile(filename,currentBits,totalBits,speed,time,args):
         bot.editMessageText(message,downloadingInfo)
     except Exception as ex: print(str(ex))
     pass
+
+def fix_directurl(url):
+    if url.startswith("https://aulacened.uci.cu/"):
+        base = "https://aulacened.uci.cu/"
+        rest = url[len(base):]
+        return base + "webservice/" + rest
+    return url
 
 def processUploadFiles(filename,filesize,files,update,bot,message,thread=None,jdb=None):
     try:
@@ -181,10 +185,11 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
                 except:pass
             if getUser['uploadtype'] == 'draft' or getUser['uploadtype'] == 'blog' or getUser['uploadtype']=='calendario':
                for draft in client:
-                   files.append({'name':draft['file'],'directurl':draft['url']})
+                   files.append({'name':draft['file'],'directurl':fix_directurl(draft['url'])})
         else:
             for data in client:
-                files.append({'name':data['name'],'directurl':data['url']})
+                files.append({'name':data['name'],'directurl':fix_directurl(data['url'])})
+
         bot.deleteMessage(message.chat.id,message.message_id)
         finishInfo = infos.createFinishUploading(file,file_size,max_file_size,file_upload_count,file_upload_count,findex)
         filesInfo = infos.createFileMsg(file,files)
@@ -228,7 +233,7 @@ def sendTxt(name,files,update,bot):
                     separator = ''
                     if fi < len(files)-1:
                         separator += '\n'
-                    txt.write(f['directurl']+separator)
+                    txt.write(fix_directurl(f['directurl'])+separator)
                     fi += 1
                 txt.close()
                 bot.sendFile(update.message.chat.id,name)
@@ -236,12 +241,14 @@ def sendTxt(name,files,update,bot):
 
 def onmessage(update,bot:ObigramClient):
     try:
+        # bloquear archivos
+        if update.message.document or update.message.photo or update.message.video or update.message.audio or update.message.voice or update.message.sticker:
+            bot.sendMessage(update.message.chat.id,"❌ No se permiten archivos, imágenes ni documentos. Solo enlaces de descarga.")
+            return
+
         thread = bot.this_thread
         username = update.message.sender.username
         tl_admin_user = os.environ.get('tl_admin_user','Eliel_21')
-
-        #Descomentar debajo solo si se ba a poner el usuario admin de telegram manual
-        #tl_admin_user = '*'
 
         jdb = JsonDatabase('database')
         jdb.check_create()
@@ -249,7 +256,7 @@ def onmessage(update,bot:ObigramClient):
 
         user_info = jdb.get_user(username)
 
-        if username == tl_admin_user or tl_admin_user=='*' or user_info :  # validate user
+        if username == tl_admin_user or tl_admin_user=='*' or user_info :
             if user_info is None:
                 if username == tl_admin_user:
                     jdb.create_admin(username)
@@ -304,7 +311,6 @@ def onmessage(update,bot:ObigramClient):
             else:
                 bot.sendMessage(update.message.chat.id,'❌No Tiene Permiso❌')
             return
-        # end
 
         # comandos de usuario
         if '/tutorial' in msgText:
@@ -425,7 +431,7 @@ def onmessage(update,bot:ObigramClient):
                     statInfo = infos.createStat(username,getUser,jdb.is_admin(username))
                     bot.sendMessage(update.message.chat.id,statInfo)
             except:
-                bot.sendMessage(update.message.chat.id,'❌Error en el comando /uptype (typo de subida (evidence,draft,blog))❌')
+                bot.sendMessage(update.message.chat.id,'❌Error en el comando /uptype❌')
             return
         if '/proxy' in msgText:
             try:
@@ -470,17 +476,13 @@ def onmessage(update,bot:ObigramClient):
             except Exception as ex:
                 print(str(ex))
             return
-        #end
 
         message = bot.sendMessage(update.message.chat.id,'🕰Procesando🕰...')
 
         thread.store('msg',message)
 
         if '/start' in msgText:
-            start_msg = 'Bot          : TGUploaderPro v7.0 Fixed\n'
-            start_msg+= 'Desarrollador: @obisoftdevel\n'
-            start_msg+= 'Api          : https://github.com/ObisoftDev/tguploaderpro\n'
-            start_msg+= 'Uso          :Envia Enlaces De Descarga y Archivos Para Procesar (Configure Antes De Empezar , Vea El /tutorial)\n'
+            start_msg = "Bienvenido — Bot de gestión de descargas\nPropietario: @RentCubaCarHola\nEnvíe un enlace para procesarlo."
             bot.editMessageText(message,start_msg)
         elif '/files' == msgText and user_info['cloudtype']=='moodle':
              proxy = ProxyCloud.parse(user_info['proxy'])
@@ -555,8 +557,8 @@ def onmessage(update,bot:ObigramClient):
     except Exception as ex:
            print(str(ex))
 
+
 def start_health_server(port):
-    """Inicia un servidor HTTP simple para health checks"""
     try:
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -568,8 +570,6 @@ def start_health_server(port):
             try:
                 client_socket, addr = server_socket.accept()
                 request = client_socket.recv(1024).decode('utf-8')
-                
-                # Responder con HTTP 200 OK
                 response = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nBot is running!"
                 client_socket.send(response.encode('utf-8'))
                 client_socket.close()
@@ -583,23 +583,17 @@ def start_health_server(port):
 def main():
     bot_token = os.environ.get('bot_token')
 
-    #decomentar abajo y modificar solo si se va a poner el token del bot manual
-    #bot_token = 'BOT TOKEN'
-
     bot = ObigramClient(bot_token)
     bot.onMessage(onmessage)
     
-    # Obtener puerto de Render
     port = int(os.environ.get("PORT", 5000))
     
-    # Iniciar servidor de health check en un hilo separado
     health_thread = threading.Thread(target=start_health_server, args=(port,))
     health_thread.daemon = True
     health_thread.start()
     
     print(f"🚀 Bot starting with health check on port {port}")
     
-    # Ejecutar el bot
     bot.run()
 
 if __name__ == '__main__':
@@ -607,6 +601,5 @@ if __name__ == '__main__':
         main()
     except Exception as e:
         print(f"❌ Error: {e}")
-        # Reintentar después de 5 segundos
         time.sleep(5)
         main()

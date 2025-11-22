@@ -439,38 +439,129 @@ Envía cualquier enlace HTTP/HTTPS y el bot lo procesará automáticamente.
             bot.sendMessage(update.message.chat.id, response_msg, parse_mode='HTML')
             return
 
-        # comandos de admin (solo para administrador)
+        # COMANDO ADDUSER MEJORADO - MÚLTIPLES USUARIOS
         if '/adduser' in msgText:
             isadmin = jdb.is_admin(username)
             if isadmin:
                 try:
-                    user = str(msgText).split(' ')[1]
-                    jdb.create_user(user)
+                    # Obtener todos los usuarios después del comando
+                    users_text = str(msgText).split(' ', 1)[1]
+                    # Separar por comas y limpiar espacios
+                    users = [user.strip().replace('@', '') for user in users_text.split(',')]
+                    
+                    added_users = []
+                    existing_users = []
+                    
+                    for user in users:
+                        if user:  # Verificar que no esté vacío
+                            if not jdb.get_user(user):  # Si el usuario no existe
+                                jdb.create_user(user)
+                                added_users.append(user)
+                            else:
+                                existing_users.append(user)
+                    
                     jdb.save()
-                    msg = f'<b>✅ ¡Perfecto!</b> @{user} ahora tiene acceso al bot'
-                    bot.sendMessage(update.message.chat.id, msg, parse_mode='HTML')
-                except:
-                    bot.sendMessage(update.message.chat.id,'<b>❌ Error en el comando:</b> <code>/adduser username</code>', parse_mode='HTML')
+                    
+                    # Crear mensaje de respuesta con singular/plural
+                    message_parts = []
+                    
+                    if added_users:
+                        if len(added_users) == 1:
+                            message_parts.append(f'<b>✅ Usuario agregado:</b> @{added_users[0]}')
+                        else:
+                            message_parts.append(f'<b>✅ Usuarios agregados:</b> @{", @".join(added_users)}')
+                    
+                    if existing_users:
+                        if len(existing_users) == 1:
+                            message_parts.append(f'<b>⚠️ Usuario ya existente:</b> @{existing_users[0]}')
+                        else:
+                            message_parts.append(f'<b>⚠️ Usuarios ya existentes:</b> @{", @".join(existing_users)}')
+                    
+                    if message_parts:
+                        final_message = '\n\n'.join(message_parts)
+                    else:
+                        final_message = '<b>❌ No se proporcionaron usuarios válidos</b>'
+                        
+                    bot.sendMessage(update.message.chat.id, final_message, parse_mode='HTML')
+                    
+                except Exception as e:
+                    print(f"Error en adduser: {e}")
+                    bot.sendMessage(update.message.chat.id,
+                                   '<b>❌ Error en el comando:</b>\n'
+                                   '<code>/adduser user1, user2, user3</code>\n\n'
+                                   '<b>Ejemplos:</b>\n'
+                                   '<code>/adduser juan</code>\n'
+                                   '<code>/adduser juan, maria, pedro</code>', 
+                                   parse_mode='HTML')
             else:
                 bot.sendMessage(update.message.chat.id,'<b>❌ No tiene permisos de administrador</b>', parse_mode='HTML')
             return
+
+        # COMANDO BANUSER MEJORADO - MÚLTIPLES USUARIOS
         if '/banuser' in msgText:
             isadmin = jdb.is_admin(username)
             if isadmin:
                 try:
-                    user = str(msgText).split(' ')[1]
-                    if user == username:
-                        bot.sendMessage(update.message.chat.id,'<b>❌ No puede banearse a sí mismo</b>', parse_mode='HTML')
-                        return
-                    jdb.remove(user)
+                    # Obtener todos los usuarios después del comando
+                    users_text = str(msgText).split(' ', 1)[1]
+                    # Separar por comas y limpiar espacios
+                    users = [user.strip().replace('@', '') for user in users_text.split(',')]
+                    
+                    banned_users = []
+                    not_found_users = []
+                    self_ban_attempt = False
+                    
+                    for user in users:
+                        if user:  # Verificar que no esté vacío
+                            if user == username:
+                                self_ban_attempt = True
+                                continue
+                            if jdb.get_user(user):  # Si el usuario existe
+                                jdb.remove(user)
+                                banned_users.append(user)
+                            else:
+                                not_found_users.append(user)
+                    
                     jdb.save()
-                    msg = f'<b>🚫 Usuario</b> @{user} <b>ha sido baneado</b>'
-                    bot.sendMessage(update.message.chat.id, msg, parse_mode='HTML')
-                except:
-                    bot.sendMessage(update.message.chat.id,'<b>❌ Error en el comando:</b> <code>/banuser username</code>', parse_mode='HTML')
+                    
+                    # Crear mensaje de respuesta con singular/plural
+                    message_parts = []
+                    
+                    if banned_users:
+                        if len(banned_users) == 1:
+                            message_parts.append(f'<b>🚫 Usuario baneado:</b> @{banned_users[0]}')
+                        else:
+                            message_parts.append(f'<b>🚫 Usuarios baneados:</b> @{", @".join(banned_users)}')
+                    
+                    if not_found_users:
+                        if len(not_found_users) == 1:
+                            message_parts.append(f'<b>❌ Usuario no encontrado:</b> @{not_found_users[0]}')
+                        else:
+                            message_parts.append(f'<b>❌ Usuarios no encontrados:</b> @{", @".join(not_found_users)}')
+                    
+                    if self_ban_attempt:
+                        message_parts.append('<b>⚠️ No puedes banearte a ti mismo</b>')
+                    
+                    if message_parts:
+                        final_message = '\n\n'.join(message_parts)
+                    else:
+                        final_message = '<b>❌ No se proporcionaron usuarios válidos</b>'
+                        
+                    bot.sendMessage(update.message.chat.id, final_message, parse_mode='HTML')
+                    
+                except Exception as e:
+                    print(f"Error en banuser: {e}")
+                    bot.sendMessage(update.message.chat.id,
+                                   '<b>❌ Error en el comando:</b>\n'
+                                   '<code>/banuser user1, user2, user3</code>\n\n'
+                                   '<b>Ejemplos:</b>\n'
+                                   '<code>/banuser juan</code>\n'
+                                   '<code>/banuser juan, maria, pedro</code>', 
+                                   parse_mode='HTML')
             else:
                 bot.sendMessage(update.message.chat.id,'<b>❌ No tiene permisos de administrador</b>', parse_mode='HTML')
             return
+
         if '/getdb' in msgText:
             isadmin = jdb.is_admin(username)
             if isadmin:
@@ -690,16 +781,14 @@ Envía cualquier enlace HTTP/HTTPS y el bot lo procesará automáticamente.
         thread.store('msg',message)
 
         if '/start' in msgText:
-            # BIENVENIDA CON ESTILO S1
+            # BIENVENIDA CON ESTILO S1 CORREGIDO
             welcome_text = format_s1_message("🤖 Bot de Moodle", [
                 "🚀 Subidas a Moodle",
                 "👨‍💻 Desarrollado por: @Eliel_21",
-                "⏱️ Enlaces: 8-30 minutos (en algunos casos hasta 30 minutos)",
+                "⏱️ Enlaces: 8-30 minutos",
                 "",
-                "📤 Envía cualquier enlace HTTP/HTTPS",
-                "para comenzar a subir archivos",
-                "",
-                "📚 Usa /tutorial para guía completa"
+                "📤 Envía enlaces HTTP/HTTPS",
+                "📚 Usa /tutorial para ayuda"
             ])
             
             bot.editMessageText(message, welcome_text)

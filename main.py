@@ -266,17 +266,29 @@ def onmessage(update,bot:ObigramClient):
     try:
         thread = bot.this_thread
         username = update.message.sender.username
-        tl_admin_user = os.environ.get('tl_admin_user','Eliel_21')
+        
+        # ✅ MANTENER EL NOMBRE ORIGINAL PERO ACEPTAR MÚLTIPLES ADMINS
+        tl_admin_user = Eliel_21,Thali355
+        
+        # Convertir a lista si hay múltiples administradores separados por comas
+        if ',' in tl_admin_user:
+            tl_admin_users = [user.strip() for user in tl_admin_user.split(',')]
+        else:
+            tl_admin_users = [tl_admin_user]
 
         jdb = JsonDatabase('database')
         jdb.check_create()
         jdb.load()
 
+        # ✅ FUNCIÓN PARA VERIFICAR SI ES ADMIN
+        def is_user_admin(username):
+            return username in tl_admin_users or jdb.is_admin(username)
+
         user_info = jdb.get_user(username)
 
-        if username == tl_admin_user or tl_admin_user=='*' or user_info :  # validate user
+        if username in tl_admin_users or tl_admin_user=='*' or user_info :  # validate user
             if user_info is None:
-                if username == tl_admin_user:
+                if username in tl_admin_users:
                     jdb.create_admin(username)
                 else:
                     jdb.create_user(username)
@@ -295,7 +307,7 @@ def onmessage(update,bot:ObigramClient):
         is_text = msgText != ''
         
         # ✅ BLOQUEAR SOLO COMANDOS DE CONFIGURACIÓN PARA USUARIOS NORMALES
-        isadmin = jdb.is_admin(username)
+        isadmin = is_user_admin(username)
         
         # Si NO es admin y el mensaje es un COMANDO de configuración, bloquear
         if not isadmin and is_text and any(cmd in msgText for cmd in [
@@ -347,48 +359,45 @@ def onmessage(update,bot:ObigramClient):
 
         # comandos de admin (solo para administrador)
         if '/adduser' in msgText:
-            isadmin = jdb.is_admin(username)
-            if isadmin:
-                try:
-                    user = str(msgText).split(' ')[1]
-                    jdb.create_user(user)
-                    jdb.save()
-                    msg = f'<b>✅ ¡Perfecto!</b> @{user} ahora tiene acceso al bot'
-                    bot.sendMessage(update.message.chat.id, msg, parse_mode='HTML')
-                except:
-                    bot.sendMessage(update.message.chat.id,'<b>❌ Error en el comando:</b> <code>/adduser username</code>', parse_mode='HTML')
-            else:
+            if not is_user_admin(username):
                 bot.sendMessage(update.message.chat.id,'<b>❌ No tiene permisos de administrador</b>', parse_mode='HTML')
+                return
+            try:
+                user = str(msgText).split(' ')[1]
+                jdb.create_user(user)
+                jdb.save()
+                msg = f'<b>✅ ¡Perfecto!</b> @{user} ahora tiene acceso al bot'
+                bot.sendMessage(update.message.chat.id, msg, parse_mode='HTML')
+            except:
+                bot.sendMessage(update.message.chat.id,'<b>❌ Error en el comando:</b> <code>/adduser username</code>', parse_mode='HTML')
             return
         if '/banuser' in msgText:
-            isadmin = jdb.is_admin(username)
-            if isadmin:
-                try:
-                    user = str(msgText).split(' ')[1]
-                    if user == username:
-                        bot.sendMessage(update.message.chat.id,'<b>❌ No puede banearse a sí mismo</b>', parse_mode='HTML')
-                        return
-                    jdb.remove(user)
-                    jdb.save()
-                    msg = f'<b>🚫 Usuario</b> @{user} <b>ha sido baneado</b>'
-                    bot.sendMessage(update.message.chat.id, msg, parse_mode='HTML')
-                except:
-                    bot.sendMessage(update.message.chat.id,'<b>❌ Error en el comando:</b> <code>/banuser username</code>', parse_mode='HTML')
-            else:
+            if not is_user_admin(username):
                 bot.sendMessage(update.message.chat.id,'<b>❌ No tiene permisos de administrador</b>', parse_mode='HTML')
+                return
+            try:
+                user = str(msgText).split(' ')[1]
+                if user == username:
+                    bot.sendMessage(update.message.chat.id,'<b>❌ No puede banearse a sí mismo</b>', parse_mode='HTML')
+                    return
+                jdb.remove(user)
+                jdb.save()
+                msg = f'<b>🚫 Usuario</b> @{user} <b>ha sido baneado</b>'
+                bot.sendMessage(update.message.chat.id, msg, parse_mode='HTML')
+            except:
+                bot.sendMessage(update.message.chat.id,'<b>❌ Error en el comando:</b> <code>/banuser username</code>', parse_mode='HTML')
             return
         if '/getdb' in msgText:
-            isadmin = jdb.is_admin(username)
-            if isadmin:
-                bot.sendMessage(update.message.chat.id,'<b>📦 Base de datos:</b>', parse_mode='HTML')
-                bot.sendFile(update.message.chat.id,'database.jdb')
-            else:
+            if not is_user_admin(username):
                 bot.sendMessage(update.message.chat.id,'<b>❌ No tiene permisos de administrador</b>', parse_mode='HTML')
+                return
+            bot.sendMessage(update.message.chat.id,'<b>📦 Base de datos:</b>', parse_mode='HTML')
+            bot.sendFile(update.message.chat.id,'database.jdb')
             return
 
         # comandos de usuario (solo para administrador)
         if '/tutorial' in msgText:
-            if not isadmin:
+            if not is_user_admin(username):
                 bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
                 return
             try:
@@ -399,7 +408,7 @@ def onmessage(update,bot:ObigramClient):
                 bot.sendMessage(update.message.chat.id,'<b>📚 Archivo de tutorial no disponible</b>', parse_mode='HTML')
             return
         if '/myuser' in msgText:
-            if not isadmin:
+            if not is_user_admin(username):
                 bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
                 return
             getUser = user_info
@@ -408,7 +417,7 @@ def onmessage(update,bot:ObigramClient):
                 bot.sendMessage(update.message.chat.id,statInfo, parse_mode='HTML')
                 return
         if '/zips' in msgText:
-            if not isadmin:
+            if not is_user_admin(username):
                 bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
                 return
             getUser = user_info
@@ -424,7 +433,7 @@ def onmessage(update,bot:ObigramClient):
                    bot.sendMessage(update.message.chat.id,'<b>❌ Error:</b> <code>/zips tamaño_en_mb</code>', parse_mode='HTML')
                 return
         if '/account' in msgText:
-            if not isadmin:
+            if not is_user_admin(username):
                 bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
                 return
             try:
@@ -443,7 +452,7 @@ def onmessage(update,bot:ObigramClient):
                 bot.sendMessage(update.message.chat.id,'<b>❌ Error:</b> <code>/account usuario,contraseña</code>', parse_mode='HTML')
             return
         if '/host' in msgText:
-            if not isadmin:
+            if not is_user_admin(username):
                 bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
                 return
             try:
@@ -460,7 +469,7 @@ def onmessage(update,bot:ObigramClient):
                 bot.sendMessage(update.message.chat.id,'<b>❌ Error:</b> <code>/host url_del_moodle</code>', parse_mode='HTML')
             return
         if '/repoid' in msgText:
-            if not isadmin:
+            if not is_user_admin(username):
                 bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
                 return
             try:
@@ -477,7 +486,7 @@ def onmessage(update,bot:ObigramClient):
                 bot.sendMessage(update.message.chat.id,'<b>❌ Error:</b> <code>/repoid id_del_repositorio</code>', parse_mode='HTML')
             return
         if '/tokenize_on' in msgText:
-            if not isadmin:
+            if not is_user_admin(username):
                 bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
                 return
             try:
@@ -492,7 +501,7 @@ def onmessage(update,bot:ObigramClient):
                 bot.sendMessage(update.message.chat.id,'<b>❌ Error activando tokenize</b>', parse_mode='HTML')
             return
         if '/tokenize_off' in msgText:
-            if not isadmin:
+            if not is_user_admin(username):
                 bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
                 return
             try:
@@ -507,7 +516,7 @@ def onmessage(update,bot:ObigramClient):
                 bot.sendMessage(update.message.chat.id,'<b>❌ Error desactivando tokenize</b>', parse_mode='HTML')
             return
         if '/cloud' in msgText:
-            if not isadmin:
+            if not is_user_admin(username):
                 bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
                 return
             try:
@@ -524,7 +533,7 @@ def onmessage(update,bot:ObigramClient):
                 bot.sendMessage(update.message.chat.id,'<b>❌ Error:</b> <code>/cloud (moodle o cloud)</code>', parse_mode='HTML')
             return
         if '/uptype' in msgText:
-            if not isadmin:
+            if not is_user_admin(username):
                 bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
                 return
             try:
@@ -541,7 +550,7 @@ def onmessage(update,bot:ObigramClient):
                 bot.sendMessage(update.message.chat.id,'<b>❌ Error:</b> <code>/uptype (evidence, draft, blog)</code>', parse_mode='HTML')
             return
         if '/proxy' in msgText:
-            if not isadmin:
+            if not is_user_admin(username):
                 bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
                 return
             try:
@@ -561,7 +570,7 @@ def onmessage(update,bot:ObigramClient):
                     bot.sendMessage(update.message.chat.id,statInfo, parse_mode='HTML')
             return
         if '/dir' in msgText:
-            if not isadmin:
+            if not is_user_admin(username):
                 bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
                 return
             try:
@@ -607,7 +616,7 @@ Sube archivos directamente a Moodle desde enlaces web.
             
             bot.editMessageText(message, welcome_text, parse_mode='HTML')
         elif '/files' == msgText and user_info['cloudtype']=='moodle':
-             if not isadmin:
+             if not is_user_admin(username):
                 bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
                 return
              proxy = ProxyCloud.parse(user_info['proxy'])
@@ -624,7 +633,7 @@ Sube archivos directamente a Moodle desde enlaces web.
              else:
                 bot.editMessageText(message,'<b>❌ Error de conexión</b>\n• Verifique su cuenta\n• Servidor: '+client.path, parse_mode='HTML')
         elif '/txt_' in msgText and user_info['cloudtype']=='moodle':
-             if not isadmin:
+             if not is_user_admin(username):
                 bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
                 return
              findex = str(msgText).split('_')[1]
@@ -646,7 +655,7 @@ Sube archivos directamente a Moodle desde enlaces web.
                 bot.editMessageText(message,'<b>❌ Error de conexión</b>\n• Verifique su cuenta\n• Servidor: '+client.path, parse_mode='HTML')
              pass
         elif '/del_' in msgText and user_info['cloudtype']=='moodle':
-            if not isadmin:
+            if not is_user_admin(username):
                 bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
                 return
             findex = int(str(msgText).split('_')[1])
@@ -665,7 +674,7 @@ Sube archivos directamente a Moodle desde enlaces web.
             else:
                 bot.editMessageText(message,'<b>❌ Error de conexión</b>\n• Verifique su cuenta\n• Servidor: '+client.path, parse_mode='HTML')
         elif '/delall' in msgText and user_info['cloudtype']=='moodle':
-            if not isadmin:
+            if not is_user_admin(username):
                 bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
                 return
             proxy = ProxyCloud.parse(user_info['proxy'])

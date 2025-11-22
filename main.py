@@ -38,21 +38,20 @@ def format_s1_message(title, items):
     return message
 
 def format_time(seconds):
-    """Formatea el tiempo de manera legible"""
+    """Formatea el tiempo en formato minutos:segundos (00:00)"""
     if seconds <= 0:
-        return "00:00:00"
+        return "00:00"
     
     try:
-        hours = int(seconds // 3600)
-        minutes = int((seconds % 3600) // 60)
+        minutes = int(seconds // 60)
         secs = int(seconds % 60)
         
-        if hours > 99:  # Si son más de 99 horas, mostrar en formato más compacto
-            return "99:59:59+"
+        if minutes > 99:  # Si son más de 99 minutos
+            return "99:59+"
         
-        return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+        return f"{minutes:02d}:{secs:02d}"
     except:
-        return "00:00:00"
+        return "00:00"
 
 def downloadFile(downloader,filename,currentBits,totalBits,speed,time,args):
     try:
@@ -70,13 +69,13 @@ def downloadFile(downloader,filename,currentBits,totalBits,speed,time,args):
             current_mb = currentBits / (1024 * 1024)
             speed_mb = speed / (1024 * 1024) if speed > 0 else 0
             
-            # Calcular ETA con formato mejorado
+            # Calcular ETA con formato mejorado (minutos:segundos)
             if speed > 0:
                 remaining_bits = totalBits - currentBits
                 eta_seconds = remaining_bits / speed
                 eta_formatted = format_time(eta_seconds)
             else:
-                eta_formatted = "00:00:00"
+                eta_formatted = "00:00"
             
             # Mensaje con estilo S1 corregido
             downloadingInfo = format_s1_message("📥 Descargando", [
@@ -92,7 +91,7 @@ def downloadFile(downloader,filename,currentBits,totalBits,speed,time,args):
                 "✅ Progreso: 0%",
                 "📦 Tamaño: Calculando...",
                 "⚡ Velocidad: 0.00 MB/s",
-                "⏳ Tiempo: 00:00:00"
+                "⏳ Tiempo: 00:00"
             ])
             
         bot.editMessageText(message, downloadingInfo)
@@ -115,13 +114,13 @@ def uploadFile(filename,currentBits,totalBits,speed,time,args):
             current_mb = currentBits / (1024 * 1024)
             speed_mb = speed / (1024 * 1024) if speed > 0 else 0
             
-            # Calcular ETA con formato mejorado
+            # Calcular ETA con formato mejorado (minutos:segundos)
             if speed > 0:
                 remaining_bits = totalBits - currentBits
                 eta_seconds = remaining_bits / speed
                 eta_formatted = format_time(eta_seconds)
             else:
-                eta_formatted = "00:00:00"
+                eta_formatted = "00:00"
             
             file_display = originalfile if originalfile else filename
             
@@ -140,7 +139,7 @@ def uploadFile(filename,currentBits,totalBits,speed,time,args):
                 "✅ Progreso: 0%",
                 "📦 Tamaño: Calculando...",
                 "⚡ Velocidad: 0.00 MB/s",
-                "⏳ Tiempo: 00:00:00",
+                "⏳ Tiempo: 00:00",
                 f"📄 Archivo: {filename}"
             ])
             
@@ -330,7 +329,7 @@ def megadl(update,bot,message,megaurl,file_name='',thread=None,jdb=None):
     pass
 
 def sendTxt(name,files,update,bot):
-    """Envía archivo txt con enlaces"""
+    """Envía archivo txt con enlaces y thumbnail"""
     try:
         # Crear el archivo txt
         with open(name, 'w') as txt:
@@ -347,7 +346,18 @@ def sendTxt(name,files,update,bot):
 
 ⬇️ <b>Descarga el archivo TXT abajo</b>"""
         
-        bot.sendMessage(update.message.chat.id, info_msg, parse_mode='HTML')
+        # Intentar enviar con thumbnail
+        try:
+            if os.path.exists('31F5FAAF-A68A-4A49-ADDE-EA4A20CE9E58.jpg'):
+                bot.sendPhoto(update.message.chat.id,
+                            open('31F5FAAF-A68A-4A49-ADDE-EA4A20CE9E58.jpg', 'rb'),
+                            caption=info_msg,
+                            parse_mode='HTML')
+            else:
+                bot.sendMessage(update.message.chat.id, info_msg, parse_mode='HTML')
+        except Exception as e:
+            print(f"Error enviando thumbnail: {e}")
+            bot.sendMessage(update.message.chat.id, info_msg, parse_mode='HTML')
         
         # Enviar el archivo txt
         bot.sendFile(update.message.chat.id, name)

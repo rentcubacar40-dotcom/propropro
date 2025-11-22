@@ -801,9 +801,8 @@ Envía cualquier enlace HTTP/HTTPS y el bot lo procesará automáticamente.
             # BIENVENIDA CON ESTILO S1 CORREGIDO
             welcome_text = format_s1_message("🤖 Bot de Moodle", [
                 "🚀 Subidas a Moodle",
-                "👨‍💻 Desarrollado por: @Eliel_21",
+                "👨‍💻 Desarrollado por: @Eliel_21", 
                 "⏱️ Enlaces: 8-30 minutos",
-                "",
                 "📤 Envía enlaces HTTP/HTTPS",
                 "📚 Usa /tutorial para ayuda"
             ])

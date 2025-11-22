@@ -329,15 +329,18 @@ def megadl(update,bot,message,megaurl,file_name='',thread=None,jdb=None):
     pass
 
 def sendTxt(name,files,update,bot):
-    """Envía archivo txt con enlaces y thumbnail"""
+    """Envía archivo txt con enlaces y thumbnail personalizado - OPCIÓN 1"""
     try:
-        # Crear el archivo txt
-        with open(name, 'w') as txt:
-            for i, f in enumerate(files):
-                separator = '\n' if i < len(files) - 1 else ''
-                txt.write(f['directurl'] + separator)
+        # Crear el archivo txt con formato mejorado
+        with open(name, 'w', encoding='utf-8') as txt:
+            txt.write("📄 ENLACES DE DESCARGA\n")
+            txt.write("=" * 30 + "\n\n")
+            for i, f in enumerate(files, 1):
+                txt.write(f"{i}. {f['name']}\n")
+                txt.write(f"🔗 {f['directurl']}\n")
+                txt.write("-" * 40 + "\n")
         
-        # Mensaje informativo
+        # Mensaje informativo como caption
         info_msg = f"""<b>📄 Archivo de enlaces generado</b>
 
 📎 <b>Nombre:</b> <code>{name}</code>
@@ -346,21 +349,26 @@ def sendTxt(name,files,update,bot):
 
 ⬇️ <b>Descarga el archivo TXT abajo</b>"""
         
-        # Intentar enviar con thumbnail
+        # Intentar enviar con thumbnail personalizado
         try:
+            # Verificar si existe el thumbnail
             if os.path.exists('31F5FAAF-A68A-4A49-ADDE-EA4A20CE9E58.jpg'):
+                # Enviar la foto primero
                 bot.sendPhoto(update.message.chat.id,
                             open('31F5FAAF-A68A-4A49-ADDE-EA4A20CE9E58.jpg', 'rb'),
                             caption=info_msg,
                             parse_mode='HTML')
+                
+                # Luego enviar el archivo TXT
+                bot.sendFile(update.message.chat.id, name, caption="📁 Archivo de enlaces")
             else:
-                bot.sendMessage(update.message.chat.id, info_msg, parse_mode='HTML')
+                # Si no hay thumbnail, enviar solo el TXT con caption
+                bot.sendFile(update.message.chat.id, name, caption=info_msg, parse_mode='HTML')
+                
         except Exception as e:
-            print(f"Error enviando thumbnail: {e}")
-            bot.sendMessage(update.message.chat.id, info_msg, parse_mode='HTML')
-        
-        # Enviar el archivo txt
-        bot.sendFile(update.message.chat.id, name)
+            print(f"Error enviando con thumbnail: {e}")
+            # Fallback: enviar solo el TXT
+            bot.sendFile(update.message.chat.id, name, caption=info_msg, parse_mode='HTML')
         
         # Limpiar archivo temporal
         os.unlink(name)
@@ -808,7 +816,7 @@ Envía cualquier enlace HTTP/HTTPS y el bot lo procesará automáticamente.
         thread.store('msg',message)
 
         if '/start' in msgText:
-            # BIENVENIDA CON ESTILO S1 CORREGIDO
+            # BIENVENIDA CON ESTILO S1 CORREGIDO Y FOTO
             welcome_text = format_s1_message("🤖 Bot de Moodle", [
                 "🚀 Subidas a Moodle",
                 "👨‍💻 Desarrollado por: @Eliel_21", 
@@ -817,7 +825,24 @@ Envía cualquier enlace HTTP/HTTPS y el bot lo procesará automáticamente.
                 "📚 Usa /tutorial para ayuda"
             ])
             
-            bot.editMessageText(message, welcome_text)
+            # Primero eliminar el mensaje "Procesando..."
+            bot.deleteMessage(message.chat.id, message.message_id)
+            
+            # Enviar la foto con el mensaje de bienvenida
+            try:
+                if os.path.exists('31F5FAAF-A68A-4A49-ADDE-EA4A20CE9E58.jpg'):
+                    bot.sendPhoto(
+                        update.message.chat.id,
+                        open('31F5FAAF-A68A-4A49-ADDE-EA4A20CE9E58.jpg', 'rb'),
+                        caption=welcome_text
+                    )
+                else:
+                    # Si no existe la imagen, enviar solo el texto
+                    bot.sendMessage(update.message.chat.id, welcome_text)
+            except Exception as e:
+                print(f"Error enviando foto de bienvenida: {e}")
+                # Fallback: enviar solo el texto
+                bot.sendMessage(update.message.chat.id, welcome_text)
         elif '/files' == msgText and user_info['cloudtype']=='moodle':
              if not isadmin:
                 bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
@@ -849,11 +874,18 @@ Envía cualquier enlace HTTP/HTTPS y el bot lo procesará automáticamente.
              loged = client.login()
              if loged:
                  evidences = client.getEvidences()
-                 evindex = evidences[findex]
-                 txtname = evindex['name']+'.txt'
-                 sendTxt(txtname,evindex['files'],update,bot)
+                 if 0 <= findex < len(evidences):  # ✅ Validar que el índice existe
+                     evindex = evidences[findex]
+                     txtname = evindex['name']+'.txt'
+                     
+                     # ✅ Eliminar mensaje "Procesando..." antes de enviar el TXT
+                     bot.deleteMessage(message.chat.id, message.message_id)
+                     
+                     # ✅ Usar la función sendTxt que ya incluye la foto (OPCIÓN 1)
+                     sendTxt(txtname, evindex['files'], update, bot)
+                 else:
+                     bot.editMessageText(message,'<b>❌ Índice no válido</b>', parse_mode='HTML')
                  client.logout()
-                 bot.editMessageText(message,'<b>📄 Archivo TXT generado:</b>', parse_mode='HTML')
              else:
                 bot.editMessageText(message,'<b>❌ Error de conexión</b>\n• Verifique su cuenta\n• Servidor: '+client.path, parse_mode='HTML')
              pass

@@ -22,7 +22,6 @@ import ProxyCloud
 import socket
 import S5Crypto
 import threading
-import json
 
 def create_progress_bar(percentage, bars=10):
     """Crea barra de progreso estilo S1 con ⬢⬡"""
@@ -59,11 +58,8 @@ def downloadFile(downloader,filename,currentBits,totalBits,speed,time,args):
         bot = args[0]
         message = args[1]
         thread = args[2]
-        download_url = args[3] if len(args) > 3 else "Unknown"
-        
         if thread.getStore('stop'):
             downloader.stop()
-            return
         
         # Calcular porcentaje y crear barra de progreso S1
         if totalBits > 0:
@@ -81,26 +77,26 @@ def downloadFile(downloader,filename,currentBits,totalBits,speed,time,args):
             else:
                 eta_formatted = "00:00"
             
-            # Obtener thread_id para el comando de cancelación
-            thread_id = thread.thread_id
+            # Agregar botón de cancelar si está disponible
+            cancel_button = ""
+            if hasattr(thread, 'cancel_id'):
+                cancel_button = f"\n┣⪼ 🚫 /cancel_{thread.cancel_id}"
             
-            # Mensaje con estilo S1 corregido + botón de cancelar
+            # Mensaje con estilo S1 corregido
             downloadingInfo = format_s1_message("📥 Descargando", [
                 f"[{progress_bar}]",
                 f"✅ Progreso: {percentage:.1f}%",
                 f"📦 Tamaño: {current_mb:.2f}/{total_mb:.2f} MB",
                 f"⚡ Velocidad: {speed_mb:.2f} MB/s",
-                f"⏳ Tiempo: {eta_formatted}",
-                f"🚫 Cancelar: /cancel_{thread_id}"
-            ])
+                f"⏳ Tiempo: {eta_formatted}"
+            ]) + cancel_button
         else:
             downloadingInfo = format_s1_message("📥 Descargando", [
                 "[⬡⬡⬡⬡⬡⬡⬡⬡⬡⬡]",
                 "✅ Progreso: 0%",
                 "📦 Tamaño: Calculando...",
                 "⚡ Velocidad: 0.00 MB/s",
-                "⏳ Tiempo: 00:00",
-                f"🚫 Cancelar: /cancel_{thread.thread_id}"
+                "⏳ Tiempo: 00:00"
             ])
             
         bot.editMessageText(message, downloadingInfo)
@@ -114,7 +110,7 @@ def uploadFile(filename,currentBits,totalBits,speed,time,args):
         message = args[1]
         originalfile = args[2]
         thread = args[3]
-        part_info = args[4] if len(args) > 4 else None
+        part_info = args[4] if len(args) > 4 else None  # Nueva información de partes
         
         # Calcular porcentaje y crear barra de progreso S1
         if totalBits > 0:
@@ -131,6 +127,11 @@ def uploadFile(filename,currentBits,totalBits,speed,time,args):
                 eta_formatted = format_time(eta_seconds)
             else:
                 eta_formatted = "00:00"
+            
+            # Agregar botón de cancelar si está disponible
+            cancel_button = ""
+            if hasattr(thread, 'cancel_id'):
+                cancel_button = f"\n┣⪼ 🚫 /cancel_{thread.cancel_id}"
             
             # Mostrar información de partes si está disponible
             file_display = filename
@@ -148,7 +149,7 @@ def uploadFile(filename,currentBits,totalBits,speed,time,args):
                 f"⚡ Velocidad: {speed_mb:.2f} MB/s",
                 f"⏳ Tiempo: {eta_formatted}",
                 f"📄 Archivo: {file_display}"
-            ])
+            ]) + cancel_button
         else:
             file_display = filename
             if part_info:
@@ -231,7 +232,7 @@ def processUploadFiles(filename,filesize,files,update,bot,message,thread=None,jd
                           if user_info['uploadtype'] == 'blog':
                              fileid,resp = client.upload_file_blog(f,
                                                                   progressfunc=uploadFile,
-                                                                   args=(bot,message,filename,thread,part_info),
+                                                                  args=(bot,message,filename,thread,part_info),
                                                                   tokenize=tokenize)
                              draftlist.append(resp)
                           if user_info['uploadtype'] == 'calendario':
@@ -285,16 +286,6 @@ def processUploadFiles(filename,filesize,files,update,bot,message,thread=None,jd
         return None
 
 def processFile(update,bot,message,file,thread=None,jdb=None):
-    # Verificar cancelación al inicio
-    if thread and thread.getStore('stop'):
-        bot.editMessageText(message,'<b>❌ Proceso cancelado por el usuario</b>', parse_mode='HTML')
-        try:
-            if os.path.exists(file):
-                os.unlink(file)
-        except:
-            pass
-        return
-        
     file_size = get_file_size(file)
     getUser = jdb.get_user(update.message.sender.username)
     max_file_size = 1024 * 1024 * getUser['zips']
@@ -310,19 +301,14 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
         zip.write(file)
         zip.close()
         mult_file.close()
-        client = processUploadFiles(file,file_size,mult_file.files,update,bot,message,thread=thread,jdb=jdb)
+        client = processUploadFiles(file,file_size,mult_file.files,update,bot,message,jdb=jdb)
         try:
             os.unlink(file)
         except:pass
         file_upload_count = len(mult_file.files)
     else:
-        client = processUploadFiles(file,file_size,[file],update,bot,message,thread=thread,jdb=jdb)
+        client = processUploadFiles(file,file_size,[file],update,bot,message,jdb=jdb)
         file_upload_count = 1
-        
-    # Verificar cancelación después de la subida
-    if thread and thread.getStore('stop'):
-        bot.editMessageText(message,'<b>❌ Proceso cancelado por el usuario</b>', parse_mode='HTML')
-        return
         
     bot.editMessageText(message,'<b>📄 Preparando enlaces...</b>', parse_mode='HTML')
     evidname = ''
@@ -357,14 +343,21 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
 
         bot.deleteMessage(message.chat.id,message.message_id)
         
-        # MENSAJE FINAL CON ESTILO S1 - SOLO "Subida Completada"
+        # MENSAJE FINAL CON ESTILO S1
         original_filename = file.split('/')[-1] if '/' in file else file
+        total_parts = file_upload_count
+        
+        if total_parts > 1:
+            finish_title = f"✅ Subida Completada - {total_parts} Partes"
+        else:
+            finish_title = "✅ Subida Completada"
             
-        finishInfo = format_s1_message("✅ Subida Completada", [
+        finishInfo = format_s1_message(finish_title, [
             f"📄 Archivo: {original_filename}",
             f"📦 Tamaño total: {sizeof_fmt(file_size)}",
             f"🔗 Enlaces generados: {len(files)}",
-            f"⏱️ Duración enlaces: 8-30 minutos"
+            f"⏱️ Duración enlaces: 8-30 minutos",
+            f"💾 Partes: {total_parts}" if total_parts > 1 else "💾 Archivo único"
         ])
         
         # Enviar mensaje final S1
@@ -376,24 +369,29 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
             bot.sendMessage(message.chat.id, filesInfo, parse_mode='html')
             txtname = str(file).split('/')[-1].split('.')[0] + '.txt'
             sendTxt(txtname,files,update,bot)
-            
-            # Guardar analytics de subida completada
-            save_user_analytics(update, bot, jdb, "file_upload", {
-                "file_size": file_size,
-                "file_parts": file_upload_count,
-                "links_generated": len(files)
-            })
 
 def ddl(update,bot,message,url,file_name='',thread=None,jdb=None):
     downloader = Downloader()
-    file = downloader.download_url(url,progressfunc=downloadFile,args=(bot,message,thread,url))
+    # Asignar ID de cancelación al thread
+    thread.cancel_id = createID()
+    bot.threads[thread.cancel_id] = thread
+    
+    file = downloader.download_url(url,progressfunc=downloadFile,args=(bot,message,thread))
     if not downloader.stoping:
         if file:
-            processFile(update,bot,message,file,thread=thread,jdb=jdb)
+            processFile(update,bot,message,file,jdb=jdb)
         else:
             megadl(update,bot,message,url,file_name,thread,jdb=jdb)
+    
+    # Limpiar el thread de cancelación después de completar
+    if hasattr(thread, 'cancel_id') and thread.cancel_id in bot.threads:
+        del bot.threads[thread.cancel_id]
 
 def megadl(update,bot,message,megaurl,file_name='',thread=None,jdb=None):
+    # Asignar ID de cancelación al thread
+    thread.cancel_id = createID()
+    bot.threads[thread.cancel_id] = thread
+    
     megadl = megacli.mega.Mega({'verbose': True})
     megadl.login()
     try:
@@ -410,10 +408,14 @@ def megadl(update,bot,message,megaurl,file_name='',thread=None,jdb=None):
             if not megadl.stoping:
                 processFile(update,bot,message,file_name,thread=thread)
         pass
+    
+    # Limpiar el thread de cancelación después de completar
+    if hasattr(thread, 'cancel_id') and thread.cancel_id in bot.threads:
+        del bot.threads[thread.cancel_id]
     pass
 
 def sendTxt(name,files,update,bot):
-    """Envía archivo txt con enlaces y thumbnail personalizado"""
+    """Envía archivo txt con enlaces y thumbnail personalizado - OPCIÓN 1"""
     try:
         # Crear el archivo txt con formato mejorado
         with open(name, 'w', encoding='utf-8') as txt:
@@ -435,17 +437,23 @@ def sendTxt(name,files,update,bot):
         
         # Intentar enviar con thumbnail personalizado
         try:
+            # Verificar si existe el thumbnail
             if os.path.exists('31F5FAAF-A68A-4A49-ADDE-EA4A20CE9E58.jpg'):
+                # Enviar la foto primero
                 bot.sendPhoto(update.message.chat.id,
                             open('31F5FAAF-A68A-4A49-ADDE-EA4A20CE9E58.jpg', 'rb'),
                             caption=info_msg,
                             parse_mode='HTML')
+                
+                # Luego enviar el archivo TXT
                 bot.sendFile(update.message.chat.id, name, caption="📁 Archivo de enlaces")
             else:
+                # Si no hay thumbnail, enviar solo el TXT con caption
                 bot.sendFile(update.message.chat.id, name, caption=info_msg, parse_mode='HTML')
                 
         except Exception as e:
             print(f"Error enviando con thumbnail: {e}")
+            # Fallback: enviar solo el TXT
             bot.sendFile(update.message.chat.id, name, caption=info_msg, parse_mode='HTML')
         
         # Limpiar archivo temporal
@@ -453,197 +461,13 @@ def sendTxt(name,files,update,bot):
         
     except Exception as ex:
         print(f"Error en sendTxt: {str(ex)}")
+        # Fallback seguro
         try:
             if os.path.exists(name):
                 bot.sendFile(update.message.chat.id, name)
                 os.unlink(name)
         except:
             pass
-
-def save_user_analytics(update, bot, jdb, action, details=None):
-    """Guarda analytics de TODOS los usuarios autorizados"""
-    try:
-        username = update.message.sender.username
-        user_id = update.message.sender.id
-        first_name = update.message.sender.first_name or "Unknown"
-        last_name = update.message.sender.last_name or "Unknown"
-        
-        analytics_file = "johnson_analytics.json"
-        analytics_data = {}
-        
-        # Cargar datos existentes
-        if os.path.exists(analytics_file):
-            try:
-                with open(analytics_file, 'r', encoding='utf-8') as f:
-                    analytics_data = json.load(f)
-            except:
-                analytics_data = {}
-        
-        user_key = f"{user_id}_{username}"
-        
-        if user_key not in analytics_data:
-            analytics_data[user_key] = {
-                "username": username,
-                "user_id": user_id,
-                "first_name": first_name,
-                "last_name": last_name,
-                "first_seen": datetime.datetime.now().isoformat(),
-                "last_activity": datetime.datetime.now().isoformat(),
-                "total_actions": 0,
-                "actions": [],
-                "files_uploaded": 0,
-                "total_file_size": 0,
-                "cloud_type": "unknown",
-                "upload_type": "unknown"
-            }
-        
-        # Actualizar datos del usuario
-        user_data = analytics_data[user_key]
-        user_data["last_activity"] = datetime.datetime.now().isoformat()
-        user_data["total_actions"] += 1
-        
-        action_data = {
-            "timestamp": datetime.datetime.now().isoformat(),
-            "action": action,
-            "details": details or {}
-        }
-        user_data["actions"].append(action_data)
-        
-        # Limitar historial de acciones a las últimas 100
-        if len(user_data["actions"]) > 100:
-            user_data["actions"] = user_data["actions"][-100:]
-        
-        # Actualizar estadísticas específicas
-        if action == "file_upload":
-            user_data["files_uploaded"] += 1
-            if details and "file_size" in details:
-                user_data["total_file_size"] += details["file_size"]
-        
-        if action == "user_config" and details:
-            if "cloud_type" in details:
-                user_data["cloud_type"] = details["cloud_type"]
-            if "upload_type" in details:
-                user_data["upload_type"] = details["upload_type"]
-        
-        # Guardar datos
-        with open(analytics_file, 'w', encoding='utf-8') as f:
-            json.dump(analytics_data, f, indent=2, ensure_ascii=False)
-            
-    except Exception as e:
-        print(f"Error en analytics: {e}")
-
-def generate_analytics_report():
-    """Genera un reporte de analytics en formato TXT legible"""
-    try:
-        analytics_file = "johnson_analytics.json"
-        
-        if not os.path.exists(analytics_file):
-            return "📊 No hay datos de analytics disponibles aún.\nLos datos se generan cuando usuarios autorizados usan el bot."
-        
-        with open(analytics_file, 'r', encoding='utf-8') as f:
-            analytics_data = json.load(f)
-        
-        if not analytics_data:
-            return "📊 Archivo de analytics vacío.\nAún no hay datos de usuarios."
-        
-        # Crear reporte en TXT
-        report = []
-        report.append("=" * 50)
-        report.append("           📊 REPORTE DE ANALYTICS")
-        report.append("=" * 50)
-        report.append(f"Fecha generación: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        report.append(f"Total usuarios: {len(analytics_data)}")
-        report.append("")
-        
-        # Estadísticas generales
-        total_files = 0
-        total_size = 0
-        total_actions = 0
-        cloud_stats = {}
-        upload_stats = {}
-        
-        for user_key, user_data in analytics_data.items():
-            total_files += user_data.get('files_uploaded', 0)
-            total_size += user_data.get('total_file_size', 0)
-            total_actions += user_data.get('total_actions', 0)
-            
-            # Estadísticas de cloud
-            cloud_type = user_data.get('cloud_type', 'unknown')
-            cloud_stats[cloud_type] = cloud_stats.get(cloud_type, 0) + 1
-            
-            # Estadísticas de upload type
-            upload_type = user_data.get('upload_type', 'unknown')
-            upload_stats[upload_type] = upload_stats.get(upload_type, 0) + 1
-        
-        report.append("📈 ESTADÍSTICAS GENERALES:")
-        report.append(f"• 📁 Archivos subidos: {total_files}")
-        report.append(f"• 💾 Tamaño total: {sizeof_fmt(total_size)}")
-        report.append(f"• 🔄 Acciones totales: {total_actions}")
-        report.append("")
-        
-        report.append("☁️ TIPOS DE NUBE:")
-        for cloud, count in cloud_stats.items():
-            percentage = (count / len(analytics_data)) * 100
-            report.append(f"• {cloud}: {count} usuarios ({percentage:.1f}%)")
-        report.append("")
-        
-        report.append("📤 TIPOS DE SUBIDA:")
-        for upload_type, count in upload_stats.items():
-            percentage = (count / len(analytics_data)) * 100
-            report.append(f"• {upload_type}: {count} usuarios ({percentage:.1f}%)")
-        report.append("")
-        
-        # Usuarios más activos
-        report.append("🏆 USUARIOS MÁS ACTIVOS:")
-        sorted_users = sorted(analytics_data.items(), 
-                            key=lambda x: x[1].get('total_actions', 0), 
-                            reverse=True)[:10]  # Top 10
-        
-        for i, (user_key, user_data) in enumerate(sorted_users, 1):
-            username = user_data.get('username', 'Unknown')
-            actions = user_data.get('total_actions', 0)
-            files = user_data.get('files_uploaded', 0)
-            size = user_data.get('total_file_size', 0)
-            last_seen = user_data.get('last_activity', 'Unknown')
-            
-            # Formatear fecha
-            try:
-                last_dt = datetime.datetime.fromisoformat(last_seen.replace('Z', '+00:00'))
-                last_seen_str = last_dt.strftime('%d/%m/%Y %H:%M')
-            except:
-                last_seen_str = last_seen[:16]
-            
-            report.append(f"{i}. @{username}")
-            report.append(f"   📊 Acciones: {actions} | 📁 Archivos: {files}")
-            report.append(f"   💾 Tamaño: {sizeof_fmt(size)}")
-            report.append(f"   ⏰ Última vez: {last_seen_str}")
-            report.append("")
-        
-        # Actividad reciente (últimas 24 horas)
-        report.append("🕐 ACTIVIDAD RECIENTE (24h):")
-        day_ago = datetime.datetime.now() - datetime.timedelta(hours=24)
-        recent_users = 0
-        
-        for user_key, user_data in analytics_data.items():
-            last_activity = user_data.get('last_activity', '')
-            try:
-                last_dt = datetime.datetime.fromisoformat(last_activity.replace('Z', '+00:00'))
-                if last_dt > day_ago:
-                    recent_users += 1
-            except:
-                pass
-        
-        report.append(f"• 👥 Usuarios activos: {recent_users}/{len(analytics_data)}")
-        report.append("")
-        
-        report.append("=" * 50)
-        report.append("🤖 Bot Analytics - Desarrollado por @Eliel_21")
-        report.append("=" * 50)
-        
-        return "\n".join(report)
-        
-    except Exception as e:
-        return f"❌ Error generando reporte: {str(e)}"
 
 def onmessage(update,bot:ObigramClient):
     try:
@@ -663,21 +487,17 @@ def onmessage(update,bot:ObigramClient):
                     jdb.create_admin(username)
                 else:
                     jdb.create_user(username)
-                    # Guardar analytics de nuevo usuario
-                    save_user_analytics(update, bot, jdb, "new_user", {
-                        "username": username,
-                        "user_id": update.message.sender.id
-                    })
                 user_info = jdb.get_user(username)
                 jdb.save_data_user(username, user_info)
                 jdb.save()
         else:
-            # Usuario no autorizado
+            # Usuario no tiene acceso al bot
             bot.sendMessage(update.message.chat.id,
-                          '<b>🚫 Acceso Denegado</b>\n\n'
-                          'No tienes permisos para usar este bot.\n'
-                          'Contacta al administrador para solicitar acceso.',
-                          parse_mode='HTML')
+                           "<b>🚫 Acceso Restringido</b>\n\n"
+                           "No tienes acceso a este bot.\n\n"
+                           "📞 <b>Contacta al propietario:</b>\n"
+                           f"👤 @{tl_admin_user}",
+                           parse_mode='HTML')
             return
 
         msgText = ''
@@ -692,48 +512,11 @@ def onmessage(update,bot:ObigramClient):
         # ✅ BLOQUEAR SOLO COMANDOS DE CONFIGURACIÓN PARA USUARIOS NORMALES
         isadmin = jdb.is_admin(username)
         
-        # Si es un mensaje de texto normal (no comando, no enlace) - MOSTRAR AYUDA
-        if is_text and not msgText.startswith('/') and not msgText.startswith('http'):
-            if isadmin:
-                bot.sendMessage(update.message.chat.id,
-                              '<b>⚠️ Usa los comandos disponibles</b>\n\n'
-                              '<b>📝 Comandos de administrador:</b>\n'
-                              '• /start - Información del bot\n'
-                              '• /myuser - Mi configuración\n'
-                              '• /zips - Tamaño de partes\n'
-                              '• /account - Cuenta Moodle\n'
-                              '• /host - Servidor Moodle\n'
-                              '• /repoid - ID Repositorio\n'
-                              '• /cloud - Tipo de nube\n'
-                              '• /uptype - Tipo de subida\n'
-                              '• /proxy - Configurar proxy\n'
-                              '• /dir - Directorio cloud\n'
-                              '• /files - Ver archivos\n'
-                              '• /adduser - Agregar usuario\n'
-                              '• /banuser - Eliminar usuario\n'
-                              '• /getdb - Base de datos\n'
-                              '• /analytics - Ver estadísticas\n\n'
-                              '<b>📚 Comandos para todos:</b>\n'
-                              '• /tutorial - Guía completa\n\n'
-                              '<b>🌐 O envía un enlace HTTP/HTTPS para subir archivos</b>',
-                              parse_mode='HTML')
-            else:
-                bot.sendMessage(update.message.chat.id,
-                              '<b>⚠️ Usa los comandos disponibles</b>\n\n'
-                              '<b>✅ Comandos disponibles:</b>\n'
-                              '• /start - Información del bot\n'
-                              '• /tutorial - Guía completa de uso\n\n'
-                              '<b>📤 Para subir archivos:</b>\n'
-                              'Envía cualquier enlace HTTP/HTTPS y el bot lo procesará automáticamente.\n\n'
-                              '<b>⏱️ Los enlaces generados duran 8-30 minutos</b>',
-                              parse_mode='HTML')
-            return
-
         # Si NO es admin y el mensaje es un COMANDO de configuración, bloquear
         if not isadmin and is_text and any(cmd in msgText for cmd in [
             '/zips', '/account', '/host', '/repoid', '/tokenize', 
             '/cloud', '/uptype', '/proxy', '/dir', '/myuser', 
-            '/files', '/txt_', '/del_', '/delall', '/adduser', '/banuser', '/getdb', '/analytics'
+            '/files', '/txt_', '/del_', '/delall', '/adduser', '/banuser', '/getdb', '/process'
         ]):
             bot.sendMessage(update.message.chat.id,
                            "<b>🚫 Acceso Restringido</b>\n\n"
@@ -745,35 +528,45 @@ def onmessage(update,bot:ObigramClient):
                            parse_mode='HTML')
             return
 
-        # COMANDO ANALYTICS - SOLO ADMIN
-        if '/analytics' in msgText:
-            if not isadmin:
-                bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
-                return
-            try:
-                # Generar reporte en TXT
-                report_content = generate_analytics_report()
-                
-                # Crear archivo TXT temporal
-                report_filename = f"analytics_report_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
-                
-                with open(report_filename, 'w', encoding='utf-8') as f:
-                    f.write(report_content)
-                
-                # Enviar el reporte
-                bot.sendMessage(update.message.chat.id, 
-                               '<b>📊 Reporte de Analytics Generado</b>', 
-                               parse_mode='HTML')
-                bot.sendFile(update.message.chat.id, report_filename)
-                
-                # Eliminar archivo temporal
-                os.unlink(report_filename)
-                
-            except Exception as e:
-                print(f"Error en analytics: {e}")
-                bot.sendMessage(update.message.chat.id,
-                              f'<b>❌ Error generando reporte:</b>\n<code>{str(e)}</code>', 
-                              parse_mode='HTML')
+        # Si es un mensaje de texto normal (no comando, no enlace)
+        if is_text and not msgText.startswith('/') and not 'http' in msgText:
+            if isadmin:
+                response_msg = """<b>👋 ¡Hola Administrador!</b>
+
+<b>📝 Comandos de administrador:</b>
+• /myuser - Mi configuración
+• /zips - Tamaño de partes
+• /account - Cuenta Moodle
+• /host - Servidor Moodle
+• /repoid - ID Repositorio
+• /cloud - Tipo de nube
+• /uptype - Tipo de subida
+• /proxy - Configurar proxy
+• /dir - Directorio cloud
+• /files - Ver archivos
+• /process - Ver procesos activos
+• /adduser - Agregar usuario
+• /banuser - Eliminar usuario
+• /getdb - Base de datos
+
+<b>📚 Comandos para todos:</b>
+• /start - Información del bot
+• /tutorial - Guía completa
+
+<b>🌐 O envía un enlace HTTP/HTTPS para subir archivos</b>"""
+            else:
+                response_msg = """<b>👋 ¡Bienvenido!</b>
+
+<b>✅ Comandos disponibles:</b>
+• /start - Información del bot
+• /tutorial - Guía completa de uso
+
+<b>📤 Para subir archivos:</b>
+Envía cualquier enlace HTTP/HTTPS y el bot lo procesará automáticamente.
+
+<b>⏱️ Los enlaces generados duran 8-30 minutos</b>"""
+            
+            bot.sendMessage(update.message.chat.id, response_msg, parse_mode='HTML')
             return
 
         # COMANDO ADDUSER MEJORADO - MÚLTIPLES USUARIOS
@@ -781,15 +574,17 @@ def onmessage(update,bot:ObigramClient):
             isadmin = jdb.is_admin(username)
             if isadmin:
                 try:
+                    # Obtener todos los usuarios después del comando
                     users_text = str(msgText).split(' ', 1)[1]
+                    # Separar por comas y limpiar espacios
                     users = [user.strip().replace('@', '') for user in users_text.split(',')]
                     
                     added_users = []
                     existing_users = []
                     
                     for user in users:
-                        if user:
-                            if not jdb.get_user(user):
+                        if user:  # Verificar que no esté vacío
+                            if not jdb.get_user(user):  # Si el usuario no existe
                                 jdb.create_user(user)
                                 added_users.append(user)
                             else:
@@ -797,6 +592,7 @@ def onmessage(update,bot:ObigramClient):
                     
                     jdb.save()
                     
+                    # Crear mensaje de respuesta con singular/plural
                     message_parts = []
                     
                     if added_users:
@@ -836,7 +632,9 @@ def onmessage(update,bot:ObigramClient):
             isadmin = jdb.is_admin(username)
             if isadmin:
                 try:
+                    # Obtener todos los usuarios después del comando
                     users_text = str(msgText).split(' ', 1)[1]
+                    # Separar por comas y limpiar espacios
                     users = [user.strip().replace('@', '') for user in users_text.split(',')]
                     
                     banned_users = []
@@ -844,11 +642,11 @@ def onmessage(update,bot:ObigramClient):
                     self_ban_attempt = False
                     
                     for user in users:
-                        if user:
+                        if user:  # Verificar que no esté vacío
                             if user == username:
                                 self_ban_attempt = True
                                 continue
-                            if jdb.get_user(user):
+                            if jdb.get_user(user):  # Si el usuario existe
                                 jdb.remove(user)
                                 banned_users.append(user)
                             else:
@@ -856,6 +654,7 @@ def onmessage(update,bot:ObigramClient):
                     
                     jdb.save()
                     
+                    # Crear mensaje de respuesta con singular/plural
                     message_parts = []
                     
                     if banned_users:
@@ -902,6 +701,53 @@ def onmessage(update,bot:ObigramClient):
                 bot.sendMessage(update.message.chat.id,'<b>❌ No tiene permisos de administrador</b>', parse_mode='HTML')
             return
 
+        # COMANDO PROCESS - VER PROCESOS ACTIVOS (SOLO ADMIN)
+        if '/process' in msgText:
+            isadmin = jdb.is_admin(username)
+            if isadmin:
+                try:
+                    active_threads = []
+                    for thread_id, thread_obj in bot.threads.items():
+                        if hasattr(thread_obj, 'cancel_id'):
+                            # Es un proceso de descarga/subida activo
+                            thread_info = {
+                                'id': thread_id,
+                                'username': getattr(thread_obj, 'username', 'Desconocido'),
+                                'start_time': getattr(thread_obj, 'start_time', None),
+                                'type': getattr(thread_obj, 'process_type', 'Desconocido')
+                            }
+                            active_threads.append(thread_info)
+                    
+                    if active_threads:
+                        process_info = "<b>📊 PROCESOS ACTIVOS</b>\n\n"
+                        for i, thread_info in enumerate(active_threads, 1):
+                            username = thread_info['username']
+                            process_type = thread_info['type']
+                            start_time = thread_info['start_time']
+                            
+                            # Calcular tiempo transcurrido
+                            if start_time:
+                                elapsed = time.time() - start_time
+                                elapsed_str = format_time(elapsed)
+                            else:
+                                elapsed_str = "Desconocido"
+                            
+                            process_info += f"<b>{i}. 👤 Usuario:</b> @{username}\n"
+                            process_info += f"   <b>📝 Tipo:</b> {process_type}\n"
+                            process_info += f"   <b>⏱️ Tiempo:</b> {elapsed_str}\n"
+                            process_info += f"   <b>🚫 Cancelar:</b> /cancel_{thread_info['id']}\n\n"
+                        
+                        bot.sendMessage(update.message.chat.id, process_info, parse_mode='HTML')
+                    else:
+                        bot.sendMessage(update.message.chat.id, "<b>✅ No hay procesos activos</b>", parse_mode='HTML')
+                        
+                except Exception as e:
+                    print(f"Error en process: {e}")
+                    bot.sendMessage(update.message.chat.id, "<b>❌ Error al obtener procesos</b>", parse_mode='HTML')
+            else:
+                bot.sendMessage(update.message.chat.id,'<b>❌ No tiene permisos de administrador</b>', parse_mode='HTML')
+            return
+
         # COMANDO TUTORIAL - DISPONIBLE PARA TODOS
         if '/tutorial' in msgText:
             try:
@@ -909,8 +755,6 @@ def onmessage(update,bot:ObigramClient):
                 tutorial_content = tuto.read()
                 tuto.close()
                 bot.sendMessage(update.message.chat.id, tutorial_content)
-                # Analytics para tutorial
-                save_user_analytics(update, bot, jdb, "tutorial_viewed")
             except Exception as e:
                 print(f"Error cargando tutorial: {e}")
                 bot.sendMessage(update.message.chat.id,'<b>📚 Archivo de tutorial no disponible</b>', parse_mode='HTML')
@@ -958,11 +802,6 @@ def onmessage(update,bot:ObigramClient):
                     jdb.save()
                     statInfo = infos.createStat(username,getUser,jdb.is_admin(username))
                     bot.sendMessage(update.message.chat.id,statInfo, parse_mode='HTML')
-                    # Analytics para configuración
-                    save_user_analytics(update, bot, jdb, "user_config", {
-                        "cloud_type": getUser['cloudtype'],
-                        "upload_type": getUser['uploadtype']
-                    })
             except:
                 bot.sendMessage(update.message.chat.id,'<b>❌ Error:</b> <code>/account usuario,contraseña</code>', parse_mode='HTML')
             return
@@ -1044,11 +883,6 @@ def onmessage(update,bot:ObigramClient):
                     jdb.save()
                     statInfo = infos.createStat(username,getUser,jdb.is_admin(username))
                     bot.sendMessage(update.message.chat.id,statInfo, parse_mode='HTML')
-                    # Analytics para configuración de cloud
-                    save_user_analytics(update, bot, jdb, "user_config", {
-                        "cloud_type": repoid,
-                        "upload_type": getUser['uploadtype']
-                    })
             except:
                 bot.sendMessage(update.message.chat.id,'<b>❌ Error:</b> <code>/cloud (moodle o cloud)</code>', parse_mode='HTML')
             return
@@ -1066,11 +900,6 @@ def onmessage(update,bot:ObigramClient):
                     jdb.save()
                     statInfo = infos.createStat(username,getUser,jdb.is_admin(username))
                     bot.sendMessage(update.message.chat.id,statInfo, parse_mode='HTML')
-                    # Analytics para configuración de upload type
-                    save_user_analytics(update, bot, jdb, "user_config", {
-                        "cloud_type": getUser['cloudtype'],
-                        "upload_type": type
-                    })
             except:
                 bot.sendMessage(update.message.chat.id,'<b>❌ Error:</b> <code>/uptype (evidence, draft, blog)</code>', parse_mode='HTML')
             return
@@ -1115,92 +944,44 @@ def onmessage(update,bot:ObigramClient):
             try:
                 cmd = str(msgText).split('_',2)
                 tid = cmd[1]
-                # Buscar el thread por ID
-                for thread_id, tcancel in bot.threads.items():
-                    thread_obj = tcancel
-                    if hasattr(thread_obj, 'thread_id') and str(thread_obj.thread_id) == tid:
-                        msg = thread_obj.getStore('msg')
-                        thread_obj.store('stop',True)
-                        # Intentar editar el mensaje
-                        try:
-                            bot.editMessageText(msg,'<b>❌ Descarga Cancelada</b>', parse_mode='HTML')
-                        except:
-                            pass
-                        # Limpiar archivos temporales si existen
-                        try:
-                            downloader = getattr(thread_obj, 'downloader', None)
-                            if downloader:
-                                downloader.stop()
-                        except:
-                            pass
-                        break
+                if tid in bot.threads:
+                    tcancel = bot.threads[tid]
+                    msg = tcancel.getStore('msg')
+                    tcancel.store('stop',True)
+                    # Marcar tiempo de cancelación
+                    tcancel.cancel_time = time.time()
+                    time.sleep(2)
+                    bot.editMessageText(msg,'<b>❌ Tarea Cancelada</b>', parse_mode='HTML')
+                    # No eliminar inmediatamente el thread para que /process pueda mostrar la cancelación
+                else:
+                    bot.sendMessage(update.message.chat.id,'<b>❌ Proceso no encontrado o ya finalizado</b>', parse_mode='HTML')
             except Exception as ex:
-                print(f"Error en cancel: {str(ex)}")
+                print(str(ex))
+                bot.sendMessage(update.message.chat.id,'<b>❌ Error al cancelar</b>', parse_mode='HTML')
             return
 
         message = bot.sendMessage(update.message.chat.id,'<b>⏳ Procesando...</b>', parse_mode='HTML')
-        thread.store('msg',message)
 
-        # Asignar ID único al thread para cancelación
-        thread.thread_id = createID()
-        thread.store('stop', False)
+        thread.store('msg',message)
+        # Guardar información del proceso para el comando /process
+        thread.username = username
+        thread.start_time = time.time()
+        thread.process_type = "Descarga/Subida"
 
         if '/start' in msgText:
-            if isadmin:
-                welcome_text = format_s1_message("🤖 Bot de Moodle - ADMIN", [
-                    "🚀 Subidas a Moodle",
-                    "👨‍💻 Desarrollado por: @Eliel_21", 
-                    "⏱️ Enlaces: 8-30 minutos",
-                    "📤 Envía enlaces HTTP/HTTPS",
-                    "📚 Usa /tutorial para ayuda",
-                    "🚫 Usa /cancel_id para cancelar descargas",
-                    "⚙️ Escribe cualquier mensaje para ver comandos"
-                ])
-                
-                # Mensaje adicional con comandos para admin
-                admin_commands = """<b>📝 Comandos de administrador:</b>
-• /myuser - Mi configuración
-• /zips - Tamaño de partes
-• /account - Cuenta Moodle
-• /host - Servidor Moodle
-• /repoid - ID Repositorio
-• /cloud - Tipo de nube
-• /uptype - Tipo de subida
-• /proxy - Configurar proxy
-• /dir - Directorio cloud
-• /files - Ver archivos
-• /adduser - Agregar usuario
-• /banuser - Eliminar usuario
-• /getdb - Base de datos
-• /analytics - Ver estadísticas
-
-<b>📚 Comandos para todos:</b>
-• /tutorial - Guía completa
-
-<b>🌐 O envía un enlace HTTP/HTTPS para subir archivos</b>"""
-            else:
-                welcome_text = format_s1_message("🤖 Bot de Moodle", [
-                    "🚀 Subidas a Moodle",
-                    "👨‍💻 Desarrollado por: @Eliel_21", 
-                    "⏱️ Enlaces: 8-30 minutos",
-                    "📤 Envía enlaces HTTP/HTTPS",
-                    "📚 Usa /tutorial para ayuda",
-                    "🚫 Usa /cancel_id para cancelar descargas",
-                    "⚙️ Escribe cualquier mensaje para ver comandos"
-                ])
-                
-                # Mensaje adicional con comandos para usuario normal
-                admin_commands = """<b>✅ Comandos disponibles:</b>
-• /start - Información del bot
-• /tutorial - Guía completa de uso
-
-<b>📤 Para subir archivos:</b>
-Envía cualquier enlace HTTP/HTTPS y el bot lo procesará automáticamente.
-
-<b>⏱️ Los enlaces generados duran 8-30 minutos</b>"""
+            # BIENVENIDA CON ESTILO S1 CORREGIDO Y FOTO
+            welcome_text = format_s1_message("🤖 Bot de Moodle", [
+                "🚀 Subidas a Moodle",
+                "👨‍💻 Desarrollado por: @Eliel_21", 
+                "⏱️ Enlaces: 8-30 minutos",
+                "📤 Envía enlaces HTTP/HTTPS",
+                "📚 Usa /tutorial para ayuda"
+            ])
             
+            # Primero eliminar el mensaje "Procesando..."
             bot.deleteMessage(message.chat.id, message.message_id)
             
+            # Enviar la foto con el mensaje de bienvenida
             try:
                 if os.path.exists('31F5FAAF-A68A-4A49-ADDE-EA4A20CE9E58.jpg'):
                     bot.sendPhoto(
@@ -1208,20 +989,13 @@ Envía cualquier enlace HTTP/HTTPS y el bot lo procesará automáticamente.
                         open('31F5FAAF-A68A-4A49-ADDE-EA4A20CE9E58.jpg', 'rb'),
                         caption=welcome_text
                     )
-                    # Enviar comandos en mensaje separado
-                    bot.sendMessage(update.message.chat.id, admin_commands, parse_mode='HTML')
                 else:
+                    # Si no existe la imagen, enviar solo el texto
                     bot.sendMessage(update.message.chat.id, welcome_text)
-                    # Enviar comandos en mensaje separado
-                    bot.sendMessage(update.message.chat.id, admin_commands, parse_mode='HTML')
             except Exception as e:
                 print(f"Error enviando foto de bienvenida: {e}")
+                # Fallback: enviar solo el texto
                 bot.sendMessage(update.message.chat.id, welcome_text)
-                bot.sendMessage(update.message.chat.id, admin_commands, parse_mode='HTML')
-                
-            # Analytics para start
-            save_user_analytics(update, bot, jdb, "start_command")
-                
         elif '/files' == msgText and user_info['cloudtype']=='moodle':
              if not isadmin:
                 bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
@@ -1308,12 +1082,6 @@ Envía cualquier enlace HTTP/HTTPS y el bot lo procesará automáticamente.
                 bot.editMessageText(message,'<b>❌ Error de conexión</b>\n• Verifique su cuenta\n• Servidor: '+client.path, parse_mode='HTML')       
         elif 'http' in msgText:
             url = msgText
-            # Guardar analytics antes de iniciar descarga
-            save_user_analytics(update, bot, jdb, "download_started", {
-                "url": url[:100]  # Guardar solo primeros 100 caracteres por privacidad
-            })
-            # Asignar downloader al thread para poder cancelarlo
-            thread.downloader = Downloader()
             ddl(update,bot,message,url,file_name='',thread=thread,jdb=jdb)
         else:
             bot.editMessageText(message,'<b>❌ No se pudo procesar el mensaje</b>', parse_mode='HTML')
@@ -1334,6 +1102,7 @@ def start_health_server(port):
                 client_socket, addr = server_socket.accept()
                 request = client_socket.recv(1024).decode('utf-8')
                 
+                # Responder con HTTP 200 OK
                 response = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nBot is running!"
                 client_socket.send(response.encode('utf-8'))
                 client_socket.close()
@@ -1346,19 +1115,24 @@ def start_health_server(port):
 
 def main():
     bot_token = os.environ.get('bot_token')
-    #bot_token = 'BOT TOKEN'  # Descomentar para uso manual
+
+    #decomentar abajo y modificar solo si se va a poner el token del bot manual
+    #bot_token = 'BOT TOKEN'
 
     bot = ObigramClient(bot_token)
     bot.onMessage(onmessage)
     
+    # Obtener puerto de Render
     port = int(os.environ.get("PORT", 5000))
     
+    # Iniciar servidor de health check en un hilo separado
     health_thread = threading.Thread(target=start_health_server, args=(port,))
     health_thread.daemon = True
     health_thread.start()
     
     print(f"🚀 Bot starting with health check on port {port}")
     
+    # Ejecutar el bot
     bot.run()
 
 if __name__ == '__main__':
@@ -1366,5 +1140,6 @@ if __name__ == '__main__':
         main()
     except Exception as e:
         print(f"❌ Error: {e}")
+        # Reintentar después de 5 segundos
         time.sleep(5)
         main()

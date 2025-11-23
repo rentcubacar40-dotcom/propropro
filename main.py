@@ -82,7 +82,7 @@ def downloadFile(downloader,filename,currentBits,totalBits,speed,time,args):
                 eta_formatted = "00:00"
             
             # Obtener thread_id para el comando de cancelación
-            thread_id = thread.thread_id if hasattr(thread, 'thread_id') else id(thread)
+            thread_id = thread.thread_id
             
             # Mensaje con estilo S1 corregido + botón de cancelar
             downloadingInfo = format_s1_message("📥 Descargando", [
@@ -94,14 +94,13 @@ def downloadFile(downloader,filename,currentBits,totalBits,speed,time,args):
                 f"🚫 Cancelar: /cancel_{thread_id}"
             ])
         else:
-            thread_id = thread.thread_id if hasattr(thread, 'thread_id') else id(thread)
             downloadingInfo = format_s1_message("📥 Descargando", [
                 "[⬡⬡⬡⬡⬡⬡⬡⬡⬡⬡]",
                 "✅ Progreso: 0%",
                 "📦 Tamaño: Calculando...",
                 "⚡ Velocidad: 0.00 MB/s",
                 "⏳ Tiempo: 00:00",
-                f"🚫 Cancelar: /cancel_{thread_id}"
+                f"🚫 Cancelar: /cancel_{thread.thread_id}"
             ])
             
         bot.editMessageText(message, downloadingInfo)
@@ -116,10 +115,6 @@ def uploadFile(filename,currentBits,totalBits,speed,time,args):
         originalfile = args[2]
         thread = args[3]
         part_info = args[4] if len(args) > 4 else None
-        
-        # Verificar si se canceló
-        if thread.getStore('stop'):
-            return
         
         # Calcular porcentaje y crear barra de progreso S1
         if totalBits > 0:
@@ -145,18 +140,14 @@ def uploadFile(filename,currentBits,totalBits,speed,time,args):
             elif originalfile:
                 file_display = originalfile
             
-            # Obtener thread_id para el comando de cancelación
-            thread_id = thread.thread_id if hasattr(thread, 'thread_id') else id(thread)
-            
-            # Mensaje con estilo S1 corregido + botón de cancelar
+            # Mensaje con estilo S1 corregido
             uploadingInfo = format_s1_message("📤 Subiendo", [
                 f"[{progress_bar}]",
                 f"✅ Progreso: {percentage:.1f}%",
                 f"📦 Tamaño: {current_mb:.2f}/{total_mb:.2f} MB",
                 f"⚡ Velocidad: {speed_mb:.2f} MB/s",
                 f"⏳ Tiempo: {eta_formatted}",
-                f"📄 Archivo: {file_display}",
-                f"🚫 Cancelar: /cancel_{thread_id}"
+                f"📄 Archivo: {file_display}"
             ])
         else:
             file_display = filename
@@ -164,15 +155,13 @@ def uploadFile(filename,currentBits,totalBits,speed,time,args):
                 current_part, total_parts, original_name = part_info
                 file_display = f"{original_name} (Parte {current_part}/{total_parts})"
             
-            thread_id = thread.thread_id if hasattr(thread, 'thread_id') else id(thread)
             uploadingInfo = format_s1_message("📤 Subiendo", [
                 "[⬡⬡⬡⬡⬡⬡⬡⬡⬡⬡]",
                 "✅ Progreso: 0%",
                 "📦 Tamaño: Calculando...",
                 "⚡ Velocidad: 0.00 MB/s",
                 "⏳ Tiempo: 00:00",
-                f"📄 Archivo: {file_display}",
-                f"🚫 Cancelar: /cancel_{thread_id}"
+                f"📄 Archivo: {file_display}"
             ])
             
         bot.editMessageText(message, uploadingInfo)
@@ -213,11 +202,6 @@ def processUploadFiles(filename,filesize,files,update,bot,message,thread=None,jd
                 draftlist = []
                 
                 for i, f in enumerate(files, 1):
-                    # Verificar cancelación antes de cada subida
-                    if thread and thread.getStore('stop'):
-                        bot.editMessageText(message,'<b>❌ Subida cancelada por el usuario</b>', parse_mode='HTML')
-                        return None
-                        
                     f_size = get_file_size(f)
                     resp = None
                     iter = 0
@@ -232,11 +216,6 @@ def processUploadFiles(filename,filesize,files,update,bot,message,thread=None,jd
                         part_info = (i, total_parts, filename)
                     
                     while resp is None:
-                          # Verificar cancelación durante la subida
-                          if thread and thread.getStore('stop'):
-                              bot.editMessageText(message,'<b>❌ Subida cancelada por el usuario</b>', parse_mode='HTML')
-                              return None
-                              
                           if user_info['uploadtype'] == 'evidence':
                              fileid,resp = client.upload_file(f,evidence,fileid,
                                                              progressfunc=uploadFile,
@@ -288,11 +267,6 @@ def processUploadFiles(filename,filesize,files,update,bot,message,thread=None,jd
                total_parts = len(files)
                filesdata = []
                for i, f in enumerate(files, 1):
-                   # Verificar cancelación antes de cada subida
-                   if thread and thread.getStore('stop'):
-                       bot.editMessageText(message,'<b>❌ Subida cancelada por el usuario</b>', parse_mode='HTML')
-                       return None
-                       
                    # Información de partes para archivos múltiples
                    part_info = None
                    if total_parts > 1:
@@ -383,21 +357,14 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
 
         bot.deleteMessage(message.chat.id,message.message_id)
         
-        # MENSAJE FINAL CON ESTILO S1
+        # MENSAJE FINAL CON ESTILO S1 - SOLO "Subida Completada"
         original_filename = file.split('/')[-1] if '/' in file else file
-        total_parts = file_upload_count
-        
-        if total_parts > 1:
-            finish_title = f"✅ Subida Completada - {total_parts} Partes"
-        else:
-            finish_title = "✅ Subida Completada"
             
-        finishInfo = format_s1_message(finish_title, [
+        finishInfo = format_s1_message("✅ Subida Completada", [
             f"📄 Archivo: {original_filename}",
             f"📦 Tamaño total: {sizeof_fmt(file_size)}",
             f"🔗 Enlaces generados: {len(files)}",
-            f"⏱️ Duración enlaces: 8-30 minutos",
-            f"💾 Partes: {total_parts}" if total_parts > 1 else "💾 Archivo único"
+            f"⏱️ Duración enlaces: 8-30 minutos"
         ])
         
         # Enviar mensaje final S1
@@ -414,7 +381,7 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
             if not jdb.is_admin(update.message.sender.username):
                 save_user_analytics(update, bot, jdb, "file_upload", {
                     "file_size": file_size,
-                    "file_parts": total_parts,
+                    "file_parts": file_upload_count,
                     "links_generated": len(files)
                 })
 
@@ -512,8 +479,11 @@ def save_user_analytics(update, bot, jdb, action, details=None):
         
         # Cargar datos existentes
         if os.path.exists(analytics_file):
-            with open(analytics_file, 'r', encoding='utf-8') as f:
-                analytics_data = json.load(f)
+            try:
+                with open(analytics_file, 'r', encoding='utf-8') as f:
+                    analytics_data = json.load(f)
+            except:
+                analytics_data = {}
         
         user_key = f"{user_id}_{username}"
         
@@ -609,24 +579,8 @@ def onmessage(update,bot:ObigramClient):
         # ✅ BLOQUEAR SOLO COMANDOS DE CONFIGURACIÓN PARA USUARIOS NORMALES
         isadmin = jdb.is_admin(username)
         
-        # Si NO es admin y el mensaje es un COMANDO de configuración, bloquear
-        if not isadmin and is_text and any(cmd in msgText for cmd in [
-            '/zips', '/account', '/host', '/repoid', '/tokenize', 
-            '/cloud', '/uptype', '/proxy', '/dir', '/myuser', 
-            '/files', '/txt_', '/del_', '/delall', '/adduser', '/banuser', '/getdb'
-        ]):
-            bot.sendMessage(update.message.chat.id,
-                           "<b>🚫 Acceso Restringido</b>\n\n"
-                           "Los comandos de configuración están disponibles solo para administradores.\n\n"
-                           "<b>✅ Comandos disponibles para ti:</b>\n"
-                           "• /start - Información del bot\n"
-                           "• /tutorial - Guía de uso completo\n"
-                           "• Enlaces HTTP/HTTPS para subir archivos",
-                           parse_mode='HTML')
-            return
-
-        # Si es un mensaje de texto normal (no comando, no enlace)
-        if is_text and not msgText.startswith('/') and not 'http' in msgText:
+        # Si es un mensaje de texto normal (no comando, no enlace) - MOSTRAR COMANDOS DISPONIBLES
+        if is_text and not msgText.startswith('/') and not msgText.startswith('http'):
             if isadmin:
                 response_msg = """<b>👋 ¡Hola Administrador!</b>
 
@@ -666,6 +620,22 @@ Envía cualquier enlace HTTP/HTTPS y el bot lo procesará automáticamente.
             bot.sendMessage(update.message.chat.id, response_msg, parse_mode='HTML')
             return
 
+        # Si NO es admin y el mensaje es un COMANDO de configuración, bloquear
+        if not isadmin and is_text and any(cmd in msgText for cmd in [
+            '/zips', '/account', '/host', '/repoid', '/tokenize', 
+            '/cloud', '/uptype', '/proxy', '/dir', '/myuser', 
+            '/files', '/txt_', '/del_', '/delall', '/adduser', '/banuser', '/getdb', '/analytics'
+        ]):
+            bot.sendMessage(update.message.chat.id,
+                           "<b>🚫 Acceso Restringido</b>\n\n"
+                           "Los comandos de configuración están disponibles solo para administradores.\n\n"
+                           "<b>✅ Comandos disponibles para ti:</b>\n"
+                           "• /start - Información del bot\n"
+                           "• /tutorial - Guía de uso completo\n"
+                           "• Enlaces HTTP/HTTPS para subir archivos",
+                           parse_mode='HTML')
+            return
+
         # COMANDO ANALYTICS - SOLO ADMIN
         if '/analytics' in msgText:
             if not isadmin:
@@ -674,11 +644,19 @@ Envía cualquier enlace HTTP/HTTPS y el bot lo procesará automáticamente.
             try:
                 analytics_file = "johnson_analytics.json"
                 if os.path.exists(analytics_file):
-                    bot.sendMessage(update.message.chat.id,'<b>📊 Estadísticas de usuarios:</b>', parse_mode='HTML')
-                    bot.sendFile(update.message.chat.id, analytics_file)
+                    # Leer y verificar que tiene contenido
+                    with open(analytics_file, 'r', encoding='utf-8') as f:
+                        analytics_data = json.load(f)
+                    
+                    if analytics_data:
+                        bot.sendMessage(update.message.chat.id,'<b>📊 Estadísticas de usuarios:</b>', parse_mode='HTML')
+                        bot.sendFile(update.message.chat.id, analytics_file)
+                    else:
+                        bot.sendMessage(update.message.chat.id,'<b>📊 Archivo de analytics vacío</b>', parse_mode='HTML')
                 else:
                     bot.sendMessage(update.message.chat.id,'<b>📊 No hay datos de analytics aún</b>', parse_mode='HTML')
             except Exception as e:
+                print(f"Error en analytics: {e}")
                 bot.sendMessage(update.message.chat.id,f'<b>❌ Error cargando analytics:</b> {str(e)}', parse_mode='HTML')
             return
 
@@ -1027,17 +1005,25 @@ Envía cualquier enlace HTTP/HTTPS y el bot lo procesará automáticamente.
                 tid = cmd[1]
                 # Buscar el thread por ID
                 for thread_id, tcancel in bot.threads.items():
-                    if str(thread_id) == tid or str(id(tcancel)) == tid:
-                        msg = tcancel.getStore('msg')
-                        tcancel.store('stop',True)
+                    thread_obj = tcancel
+                    if hasattr(thread_obj, 'thread_id') and str(thread_obj.thread_id) == tid:
+                        msg = thread_obj.getStore('msg')
+                        thread_obj.store('stop',True)
                         # Intentar editar el mensaje
                         try:
-                            bot.editMessageText(msg,'<b>❌ Tarea Cancelada</b>', parse_mode='HTML')
+                            bot.editMessageText(msg,'<b>❌ Descarga Cancelada</b>', parse_mode='HTML')
+                        except:
+                            pass
+                        # Limpiar archivos temporales si existen
+                        try:
+                            downloader = getattr(thread_obj, 'downloader', None)
+                            if downloader:
+                                downloader.stop()
                         except:
                             pass
                         break
             except Exception as ex:
-                print(str(ex))
+                print(f"Error en cancel: {str(ex)}")
             return
 
         message = bot.sendMessage(update.message.chat.id,'<b>⏳ Procesando...</b>', parse_mode='HTML')
@@ -1048,14 +1034,26 @@ Envía cualquier enlace HTTP/HTTPS y el bot lo procesará automáticamente.
         thread.store('stop', False)
 
         if '/start' in msgText:
-            welcome_text = format_s1_message("🤖 Bot de Moodle", [
-                "🚀 Subidas a Moodle",
-                "👨‍💻 Desarrollado por: @Eliel_21", 
-                "⏱️ Enlaces: 8-30 minutos",
-                "📤 Envía enlaces HTTP/HTTPS",
-                "📚 Usa /tutorial para ayuda",
-                "🚫 Usa /cancel_id para cancelar"
-            ])
+            if isadmin:
+                welcome_text = format_s1_message("🤖 Bot de Moodle - ADMIN", [
+                    "🚀 Subidas a Moodle",
+                    "👨‍💻 Desarrollado por: @Eliel_21", 
+                    "⏱️ Enlaces: 8-30 minutos",
+                    "📤 Envía enlaces HTTP/HTTPS",
+                    "📚 Usa /tutorial para ayuda",
+                    "🚫 Usa /cancel_id para cancelar descargas",
+                    "⚙️ Escribe cualquier mensaje para ver comandos"
+                ])
+            else:
+                welcome_text = format_s1_message("🤖 Bot de Moodle", [
+                    "🚀 Subidas a Moodle",
+                    "👨‍💻 Desarrollado por: @Eliel_21", 
+                    "⏱️ Enlaces: 8-30 minutos",
+                    "📤 Envía enlaces HTTP/HTTPS",
+                    "📚 Usa /tutorial para ayuda",
+                    "🚫 Usa /cancel_id para cancelar descargas",
+                    "⚙️ Escribe cualquier mensaje para ver comandos"
+                ])
             
             bot.deleteMessage(message.chat.id, message.message_id)
             
@@ -1167,6 +1165,8 @@ Envía cualquier enlace HTTP/HTTPS y el bot lo procesará automáticamente.
                 save_user_analytics(update, bot, jdb, "download_started", {
                     "url": url[:100]  # Guardar solo primeros 100 caracteres por privacidad
                 })
+            # Asignar downloader al thread para poder cancelarlo
+            thread.downloader = Downloader()
             ddl(update,bot,message,url,file_name='',thread=thread,jdb=jdb)
         else:
             bot.editMessageText(message,'<b>❌ No se pudo procesar el mensaje</b>', parse_mode='HTML')

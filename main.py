@@ -105,6 +105,7 @@ def uploadFile(filename,currentBits,totalBits,speed,time,args):
         message = args[1]
         originalfile = args[2]
         thread = args[3]
+        part_info = args[4] if len(args) > 4 else None  # Nueva información de partes
         
         # Calcular porcentaje y crear barra de progreso S1
         if totalBits > 0:
@@ -122,7 +123,13 @@ def uploadFile(filename,currentBits,totalBits,speed,time,args):
             else:
                 eta_formatted = "00:00"
             
-            file_display = originalfile if originalfile else filename
+            # Mostrar información de partes si está disponible
+            file_display = filename
+            if part_info:
+                current_part, total_parts, original_name = part_info
+                file_display = f"{original_name} (Parte {current_part}/{total_parts})"
+            elif originalfile:
+                file_display = originalfile
             
             # Mensaje con estilo S1 corregido
             uploadingInfo = format_s1_message("📤 Subiendo", [
@@ -134,13 +141,18 @@ def uploadFile(filename,currentBits,totalBits,speed,time,args):
                 f"📄 Archivo: {file_display}"
             ])
         else:
+            file_display = filename
+            if part_info:
+                current_part, total_parts, original_name = part_info
+                file_display = f"{original_name} (Parte {current_part}/{total_parts})"
+            
             uploadingInfo = format_s1_message("📤 Subiendo", [
                 "[⬡⬡⬡⬡⬡⬡⬡⬡⬡⬡]",
                 "✅ Progreso: 0%",
                 "📦 Tamaño: Calculando...",
                 "⚡ Velocidad: 0.00 MB/s",
                 "⏳ Tiempo: 00:00",
-                f"📄 Archivo: {filename}"
+                f"📄 Archivo: {file_display}"
             ])
             
         bot.editMessageText(message, uploadingInfo)
@@ -156,6 +168,7 @@ def processUploadFiles(filename,filesize,files,update,bot,message,thread=None,jd
         user_info = jdb.get_user(update.message.sender.username)
         cloudtype = user_info['cloudtype']
         proxy = ProxyCloud.parse(user_info['proxy'])
+        
         if cloudtype == 'moodle':
             client = MoodleClient(user_info['moodle_user'],
                                   user_info['moodle_password'],
@@ -176,33 +189,53 @@ def processUploadFiles(filename,filesize,files,update,bot,message,thread=None,jd
                         evidence = client.createEvidence(evidname)
 
                 originalfile = ''
-                if len(files)>1:
-                    originalfile = filename
+                total_parts = len(files)
                 draftlist = []
-                for f in files:
+                
+                for i, f in enumerate(files, 1):
                     f_size = get_file_size(f)
                     resp = None
                     iter = 0
                     tokenize = False
+                    
                     if user_info['tokenize']!=0:
                        tokenize = True
+                    
+                    # Información de partes para archivos múltiples
+                    part_info = None
+                    if total_parts > 1:
+                        part_info = (i, total_parts, filename)
+                    
                     while resp is None:
                           if user_info['uploadtype'] == 'evidence':
-                             fileid,resp = client.upload_file(f,evidence,fileid,progressfunc=uploadFile,args=(bot,message,originalfile,thread),tokenize=tokenize)
+                             fileid,resp = client.upload_file(f,evidence,fileid,
+                                                             progressfunc=uploadFile,
+                                                             args=(bot,message,filename,thread,part_info),
+                                                             tokenize=tokenize)
                              draftlist.append(resp)
                           if user_info['uploadtype'] == 'draft':
-                             fileid,resp = client.upload_file_draft(f,progressfunc=uploadFile,args=(bot,message,originalfile,thread),tokenize=tokenize)
+                             fileid,resp = client.upload_file_draft(f,
+                                                                   progressfunc=uploadFile,
+                                                                   args=(bot,message,filename,thread,part_info),
+                                                                   tokenize=tokenize)
                              draftlist.append(resp)
                           if user_info['uploadtype'] == 'blog':
-                             fileid,resp = client.upload_file_blog(f,progressfunc=uploadFile,args=(bot,message,originalfile,thread),tokenize=tokenize)
+                             fileid,resp = client.upload_file_blog(f,
+                                                                  progressfunc=uploadFile,
+                                                                  args=(bot,message,filename,thread,part_info),
+                                                                  tokenize=tokenize)
                              draftlist.append(resp)
                           if user_info['uploadtype'] == 'calendario':
-                             fileid,resp = client.upload_file_calendar(f,progressfunc=uploadFile,args=(bot,message,originalfile,thread),tokenize=tokenize)
+                             fileid,resp = client.upload_file_calendar(f,
+                                                                      progressfunc=uploadFile,
+                                                                      args=(bot,message,filename,thread,part_info),
+                                                                      tokenize=tokenize)
                              draftlist.append(resp)
                           iter += 1
                           if iter>=10:
                               break
                     os.unlink(f)
+                    
                 if user_info['uploadtype'] == 'evidence':
                     try:
                         client.saveEvidence(evidence)
@@ -222,12 +255,18 @@ def processUploadFiles(filename,filesize,files,update,bot,message,thread=None,jd
             client = NexCloudClient.NexCloudClient(user,passw,host,proxy=proxy)
             loged = client.login()
             if loged:
-               originalfile = ''
-               if len(files)>1:
-                    originalfile = filename
+               total_parts = len(files)
                filesdata = []
-               for f in files:
-                   data = client.upload_file(f,path=remotepath,progressfunc=uploadFile,args=(bot,message,originalfile,thread),tokenize=tokenize)
+               for i, f in enumerate(files, 1):
+                   # Información de partes para archivos múltiples
+                   part_info = None
+                   if total_parts > 1:
+                       part_info = (i, total_parts, filename)
+                       
+                   data = client.upload_file(f,path=remotepath,
+                                            progressfunc=uploadFile,
+                                            args=(bot,message,filename,thread,part_info),
+                                            tokenize=tokenize)
                    filesdata.append(data)
                    os.unlink(f)
                return filesdata
@@ -235,7 +274,6 @@ def processUploadFiles(filename,filesize,files,update,bot,message,thread=None,jd
     except Exception as ex:
         bot.editMessageText(message,f'<b>❌ Error</b>\n<code>{str(ex)}</code>', parse_mode='HTML')
         return None
-
 
 def processFile(update,bot,message,file,thread=None,jdb=None):
     file_size = get_file_size(file)
@@ -257,11 +295,12 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
         try:
             os.unlink(file)
         except:pass
-        file_upload_count = len(zipfile.files)
+        file_upload_count = len(mult_file.files)
     else:
         client = processUploadFiles(file,file_size,[file],update,bot,message,jdb=jdb)
         file_upload_count = 1
-    bot.editMessageText(message,'<b>📄 Preparando archivo...</b>', parse_mode='HTML')
+        
+    bot.editMessageText(message,'<b>📄 Preparando enlaces...</b>', parse_mode='HTML')
     evidname = ''
     files = []
     if client:
@@ -293,10 +332,31 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
                 files[i]['directurl'] = url.replace('://aulacened.uci.cu/', '://aulacened.uci.cu/webservice/')
 
         bot.deleteMessage(message.chat.id,message.message_id)
-        finishInfo = infos.createFinishUploading(file,file_size,max_file_size,file_upload_count,file_upload_count,findex)
-        filesInfo = infos.createFileMsg(file,files)
-        bot.sendMessage(message.chat.id,finishInfo+'\n'+filesInfo,parse_mode='html')
-        if len(files)>0:
+        
+        # MENSAJE FINAL CON ESTILO S1
+        original_filename = file.split('/')[-1] if '/' in file else file
+        total_parts = file_upload_count
+        
+        if total_parts > 1:
+            finish_title = f"✅ Subida Completada - {total_parts} Partes"
+        else:
+            finish_title = "✅ Subida Completada"
+            
+        finishInfo = format_s1_message(finish_title, [
+            f"📄 Archivo: {original_filename}",
+            f"📦 Tamaño total: {sizeof_fmt(file_size)}",
+            f"🔗 Enlaces generados: {len(files)}",
+            f"⏱️ Duración enlaces: 8-30 minutos",
+            f"💾 Partes: {total_parts}" if total_parts > 1 else "💾 Archivo único"
+        ])
+        
+        # Enviar mensaje final S1
+        bot.sendMessage(message.chat.id, finishInfo)
+        
+        # ENVIAR ENLACES (MANTENIENDO LA FUNCIONALIDAD ORIGINAL)
+        if len(files) > 0:
+            filesInfo = infos.createFileMsg(file,files)
+            bot.sendMessage(message.chat.id, filesInfo, parse_mode='html')
             txtname = str(file).split('/')[-1].split('.')[0] + '.txt'
             sendTxt(txtname,files,update,bot)
 

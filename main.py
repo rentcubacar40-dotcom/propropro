@@ -649,84 +649,93 @@ def onmessage(update,bot:ObigramClient):
             return
 
         # COMANDO INFORMACION - VER INFORMACIÓN COMPLETA DE USUARIOS
-        if '/informacion' in msgText:
-            isadmin = jdb.is_admin(username)
-            if isadmin:
-                try:
-                    # Obtener todos los usuarios directamente del archivo JSON
-                    db_data = jdb.data
-                    info_message = "<b>📊 INFORMACIÓN COMPLETA DE USUARIOS</b>\n\n"
-                    total_users = 0
-                    total_mb_used = 0
-                    total_uploads = 0
-                    active_users = 0
-                    
-                    for user_id, user_data in db_data.items():
-                        if user_id != 'db' and user_id != '' and isinstance(user_data, dict):
-                            total_users += 1
-                            
-                            # Estadísticas del usuario
-                            mb_used = user_data.get('total_mb_used', 0)
-                            upload_count = user_data.get('upload_count', 0)
-                            last_upload = user_data.get('last_upload', 'Nunca')
-                            user_type = "👑 Admin" if user_data.get('admin', False) else "👤 User"
-                            created_date = user_data.get('created', 'Desconocida')
-                            cloud_type = user_data.get('cloudtype', 'moodle')
-                            upload_type = user_data.get('uploadtype', 'evidence')
-                            zip_size = user_data.get('zips', 100)
-                            
-                            total_mb_used += mb_used
-                            total_uploads += upload_count
-                            
-                            if upload_count > 0:
-                                active_users += 1
-                            
-                            # Formatear tamaño usado
-                            if mb_used >= 1024:
-                                size_display = f"{mb_used/1024:.2f} GB"
-                            else:
-                                size_display = f"{mb_used:.2f} MB"
-                            
-                            info_message += f"<b>🔹 Usuario:</b> @{user_id}\n"
-                            info_message += f"<b>   Tipo:</b> {user_type}\n"
-                            info_message += f"<b>   💾 Espacio usado:</b> {size_display}\n"
-                            info_message += f"<b>   📤 Subidas realizadas:</b> {upload_count}\n"
-                            info_message += f"<b>   ⏰ Última subida:</b> {last_upload}\n"
-                            info_message += f"<b>   ☁️ Nube:</b> {cloud_type}\n"
-                            info_message += f"<b>   📝 Tipo subida:</b> {upload_type}\n"
-                            info_message += f"<b>   🗜️ Tamaño partes:</b> {zip_size} MB\n"
-                            info_message += f"<b>   📅 Registrado:</b> {created_date}\n"
-                            info_message += "━━━━━━━━━━━━━━━━━━━━\n\n"
-                    
-                    # Estadísticas globales
-                    if total_mb_used >= 1024:
-                        global_size = f"{total_mb_used/1024:.2f} GB"
-                    else:
-                        global_size = f"{total_mb_used:.2f} MB"
-                    
-                    info_message += f"<b>📈 ESTADÍSTICAS GLOBALES:</b>\n"
-                    info_message += f"<b>• 👥 Total usuarios:</b> {total_users}\n"
-                    info_message += f"<b>• 🟢 Usuarios activos:</b> {active_users}\n"
-                    info_message += f"<b>• 🔴 Usuarios inactivos:</b> {total_users - active_users}\n"
-                    info_message += f"<b>• 💽 Espacio total usado:</b> {global_size}\n"
-                    info_message += f"<b>• 📤 Total de subidas:</b> {total_uploads}\n"
-                    
-                    if total_users > 0:
-                        avg_usage = total_mb_used / total_users
-                        avg_uploads = total_uploads / total_users
-                        info_message += f"<b>• 📊 Promedio por usuario:</b> {avg_usage:.2f} MB\n"
-                        info_message += f"<b>• 📦 Subidas por usuario:</b> {avg_uploads:.1f}\n"
-                    
-                    bot.sendMessage(update.message.chat.id, info_message, parse_mode='HTML')
-                        
-                except Exception as e:
-                    print(f"Error en informacion: {e}")
-                    bot.sendMessage(update.message.chat.id, 
-                                   f"<b>❌ Error al obtener información</b>\n<code>{str(e)}</code>", 
-                                   parse_mode='HTML')
+        # COMANDO INFORMACION - VER INFORMACIÓN COMPLETA DE USUARIOS
+if '/informacion' in msgText:
+    isadmin = jdb.is_admin(username)
+    if isadmin:
+        try:
+            # Obtener todos los usuarios directamente del archivo JSON
+            all_users = []
+            # Acceder a los datos internos de la base de datos
+            for key in jdb.database:
+                if key != 'db' and key != '':
+                    user_data = jdb.database[key]
+                    if isinstance(user_data, dict):
+                        all_users.append({'username': key, 'data': user_data})
+            
+            info_message = "<b>📊 INFORMACIÓN COMPLETA DE USUARIOS</b>\n\n"
+            total_users = 0
+            total_mb_used = 0
+            total_uploads = 0
+            active_users = 0
+            
+            for user_item in all_users:
+                user_id = user_item['username']
+                user_data = user_item['data']
+                total_users += 1
+                
+                # Estadísticas del usuario
+                mb_used = user_data.get('total_mb_used', 0)
+                upload_count = user_data.get('upload_count', 0)
+                last_upload = user_data.get('last_upload', 'Nunca')
+                user_type = "👑 Admin" if user_data.get('admin', False) else "👤 User"
+                created_date = user_data.get('created', 'Desconocida')
+                cloud_type = user_data.get('cloudtype', 'moodle')
+                upload_type = user_data.get('uploadtype', 'evidence')
+                zip_size = user_data.get('zips', 100)
+                
+                total_mb_used += mb_used
+                total_uploads += upload_count
+                
+                if upload_count > 0:
+                    active_users += 1
+                
+                # Formatear tamaño usado
+                if mb_used >= 1024:
+                    size_display = f"{mb_used/1024:.2f} GB"
+                else:
+                    size_display = f"{mb_used:.2f} MB"
+                
+                info_message += f"<b>🔹 Usuario:</b> @{user_id}\n"
+                info_message += f"<b>   Tipo:</b> {user_type}\n"
+                info_message += f"<b>   💾 Espacio usado:</b> {size_display}\n"
+                info_message += f"<b>   📤 Subidas realizadas:</b> {upload_count}\n"
+                info_message += f"<b>   ⏰ Última subida:</b> {last_upload}\n"
+                info_message += f"<b>   ☁️ Nube:</b> {cloud_type}\n"
+                info_message += f"<b>   📝 Tipo subida:</b> {upload_type}\n"
+                info_message += f"<b>   🗜️ Tamaño partes:</b> {zip_size} MB\n"
+                info_message += f"<b>   📅 Registrado:</b> {created_date}\n"
+                info_message += "━━━━━━━━━━━━━━━━━━━━\n\n"
+            
+            # Estadísticas globales
+            if total_mb_used >= 1024:
+                global_size = f"{total_mb_used/1024:.2f} GB"
             else:
-                bot.sendMessage(update.message.chat.id,'<b>❌ No tiene permisos de administrador</b>', parse_mode='HTML')
-            return
+                global_size = f"{total_mb_used:.2f} MB"
+            
+            info_message += f"<b>📈 ESTADÍSTICAS GLOBALES:</b>\n"
+            info_message += f"<b>• 👥 Total usuarios:</b> {total_users}\n"
+            info_message += f"<b>• 🟢 Usuarios activos:</b> {active_users}\n"
+            info_message += f"<b>• 🔴 Usuarios inactivos:</b> {total_users - active_users}\n"
+            info_message += f"<b>• 💽 Espacio total usado:</b> {global_size}\n"
+            info_message += f"<b>• 📤 Total de subidas:</b> {total_uploads}\n"
+            
+            if total_users > 0:
+                avg_usage = total_mb_used / total_users
+                avg_uploads = total_uploads / total_users
+                info_message += f"<b>• 📊 Promedio por usuario:</b> {avg_usage:.2f} MB\n"
+                info_message += f"<b>• 📦 Subidas por usuario:</b> {avg_uploads:.1f}\n"
+            
+            bot.sendMessage(update.message.chat.id, info_message, parse_mode='HTML')
+                
+        except Exception as e:
+            print(f"Error en informacion: {e}")
+            bot.sendMessage(update.message.chat.id, 
+                           f"<b>❌ Error al obtener información</b>\n<code>{str(e)}</code>", 
+                           parse_mode='HTML')
+    else:
+        bot.sendMessage(update.message.chat.id,'<b>❌ No tiene permisos de administrador</b>', parse_mode='HTML')
+    return
 
         # COMANDO TUTORIAL - DISPONIBLE PARA TODOS
         if '/tutorial' in msgText:

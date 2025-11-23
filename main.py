@@ -231,7 +231,7 @@ def processUploadFiles(filename,filesize,files,update,bot,message,thread=None,jd
                           if user_info['uploadtype'] == 'blog':
                              fileid,resp = client.upload_file_blog(f,
                                                                   progressfunc=uploadFile,
-                                                                  args=(bot,message,filename,thread,part_info),
+                                                                   args=(bot,message,filename,thread,part_info),
                                                                   tokenize=tokenize)
                              draftlist.append(resp)
                           if user_info['uploadtype'] == 'calendario':
@@ -378,12 +378,11 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
             sendTxt(txtname,files,update,bot)
             
             # Guardar analytics de subida completada
-            if not jdb.is_admin(update.message.sender.username):
-                save_user_analytics(update, bot, jdb, "file_upload", {
-                    "file_size": file_size,
-                    "file_parts": file_upload_count,
-                    "links_generated": len(files)
-                })
+            save_user_analytics(update, bot, jdb, "file_upload", {
+                "file_size": file_size,
+                "file_parts": file_upload_count,
+                "links_generated": len(files)
+            })
 
 def ddl(update,bot,message,url,file_name='',thread=None,jdb=None):
     downloader = Downloader()
@@ -462,18 +461,13 @@ def sendTxt(name,files,update,bot):
             pass
 
 def save_user_analytics(update, bot, jdb, action, details=None):
-    """Guarda analytics de usuarios en archivo Johnson (excepto admin)"""
+    """Guarda analytics de TODOS los usuarios autorizados"""
     try:
         username = update.message.sender.username
         user_id = update.message.sender.id
         first_name = update.message.sender.first_name or "Unknown"
         last_name = update.message.sender.last_name or "Unknown"
-        is_admin = jdb.is_admin(username)
         
-        # No guardar analytics del administrador
-        if is_admin:
-            return
-            
         analytics_file = "johnson_analytics.json"
         analytics_data = {}
         
@@ -538,6 +532,119 @@ def save_user_analytics(update, bot, jdb, action, details=None):
     except Exception as e:
         print(f"Error en analytics: {e}")
 
+def generate_analytics_report():
+    """Genera un reporte de analytics en formato TXT legible"""
+    try:
+        analytics_file = "johnson_analytics.json"
+        
+        if not os.path.exists(analytics_file):
+            return "📊 No hay datos de analytics disponibles aún.\nLos datos se generan cuando usuarios autorizados usan el bot."
+        
+        with open(analytics_file, 'r', encoding='utf-8') as f:
+            analytics_data = json.load(f)
+        
+        if not analytics_data:
+            return "📊 Archivo de analytics vacío.\nAún no hay datos de usuarios."
+        
+        # Crear reporte en TXT
+        report = []
+        report.append("=" * 50)
+        report.append("           📊 REPORTE DE ANALYTICS")
+        report.append("=" * 50)
+        report.append(f"Fecha generación: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        report.append(f"Total usuarios: {len(analytics_data)}")
+        report.append("")
+        
+        # Estadísticas generales
+        total_files = 0
+        total_size = 0
+        total_actions = 0
+        cloud_stats = {}
+        upload_stats = {}
+        
+        for user_key, user_data in analytics_data.items():
+            total_files += user_data.get('files_uploaded', 0)
+            total_size += user_data.get('total_file_size', 0)
+            total_actions += user_data.get('total_actions', 0)
+            
+            # Estadísticas de cloud
+            cloud_type = user_data.get('cloud_type', 'unknown')
+            cloud_stats[cloud_type] = cloud_stats.get(cloud_type, 0) + 1
+            
+            # Estadísticas de upload type
+            upload_type = user_data.get('upload_type', 'unknown')
+            upload_stats[upload_type] = upload_stats.get(upload_type, 0) + 1
+        
+        report.append("📈 ESTADÍSTICAS GENERALES:")
+        report.append(f"• 📁 Archivos subidos: {total_files}")
+        report.append(f"• 💾 Tamaño total: {sizeof_fmt(total_size)}")
+        report.append(f"• 🔄 Acciones totales: {total_actions}")
+        report.append("")
+        
+        report.append("☁️ TIPOS DE NUBE:")
+        for cloud, count in cloud_stats.items():
+            percentage = (count / len(analytics_data)) * 100
+            report.append(f"• {cloud}: {count} usuarios ({percentage:.1f}%)")
+        report.append("")
+        
+        report.append("📤 TIPOS DE SUBIDA:")
+        for upload_type, count in upload_stats.items():
+            percentage = (count / len(analytics_data)) * 100
+            report.append(f"• {upload_type}: {count} usuarios ({percentage:.1f}%)")
+        report.append("")
+        
+        # Usuarios más activos
+        report.append("🏆 USUARIOS MÁS ACTIVOS:")
+        sorted_users = sorted(analytics_data.items(), 
+                            key=lambda x: x[1].get('total_actions', 0), 
+                            reverse=True)[:10]  # Top 10
+        
+        for i, (user_key, user_data) in enumerate(sorted_users, 1):
+            username = user_data.get('username', 'Unknown')
+            actions = user_data.get('total_actions', 0)
+            files = user_data.get('files_uploaded', 0)
+            size = user_data.get('total_file_size', 0)
+            last_seen = user_data.get('last_activity', 'Unknown')
+            
+            # Formatear fecha
+            try:
+                last_dt = datetime.datetime.fromisoformat(last_seen.replace('Z', '+00:00'))
+                last_seen_str = last_dt.strftime('%d/%m/%Y %H:%M')
+            except:
+                last_seen_str = last_seen[:16]
+            
+            report.append(f"{i}. @{username}")
+            report.append(f"   📊 Acciones: {actions} | 📁 Archivos: {files}")
+            report.append(f"   💾 Tamaño: {sizeof_fmt(size)}")
+            report.append(f"   ⏰ Última vez: {last_seen_str}")
+            report.append("")
+        
+        # Actividad reciente (últimas 24 horas)
+        report.append("🕐 ACTIVIDAD RECIENTE (24h):")
+        day_ago = datetime.datetime.now() - datetime.timedelta(hours=24)
+        recent_users = 0
+        
+        for user_key, user_data in analytics_data.items():
+            last_activity = user_data.get('last_activity', '')
+            try:
+                last_dt = datetime.datetime.fromisoformat(last_activity.replace('Z', '+00:00'))
+                if last_dt > day_ago:
+                    recent_users += 1
+            except:
+                pass
+        
+        report.append(f"• 👥 Usuarios activos: {recent_users}/{len(analytics_data)}")
+        report.append("")
+        
+        report.append("=" * 50)
+        report.append("🤖 Bot Analytics - Desarrollado por @Eliel_21")
+        report.append("=" * 50)
+        
+        return "\n".join(report)
+        
+    except Exception as e:
+        return f"❌ Error generando reporte: {str(e)}"
+
 def onmessage(update,bot:ObigramClient):
     try:
         thread = bot.this_thread
@@ -565,6 +672,12 @@ def onmessage(update,bot:ObigramClient):
                 jdb.save_data_user(username, user_info)
                 jdb.save()
         else:
+            # Usuario no autorizado
+            bot.sendMessage(update.message.chat.id,
+                          '<b>🚫 Acceso Denegado</b>\n\n'
+                          'No tienes permisos para usar este bot.\n'
+                          'Contacta al administrador para solicitar acceso.',
+                          parse_mode='HTML')
             return
 
         msgText = ''
@@ -579,45 +692,41 @@ def onmessage(update,bot:ObigramClient):
         # ✅ BLOQUEAR SOLO COMANDOS DE CONFIGURACIÓN PARA USUARIOS NORMALES
         isadmin = jdb.is_admin(username)
         
-        # Si es un mensaje de texto normal (no comando, no enlace) - MOSTRAR COMANDOS DISPONIBLES
+        # Si es un mensaje de texto normal (no comando, no enlace) - MOSTRAR AYUDA
         if is_text and not msgText.startswith('/') and not msgText.startswith('http'):
             if isadmin:
-                response_msg = """<b>👋 ¡Hola Administrador!</b>
-
-<b>📝 Comandos de administrador:</b>
-• /myuser - Mi configuración
-• /zips - Tamaño de partes
-• /account - Cuenta Moodle
-• /host - Servidor Moodle
-• /repoid - ID Repositorio
-• /cloud - Tipo de nube
-• /uptype - Tipo de subida
-• /proxy - Configurar proxy
-• /dir - Directorio cloud
-• /files - Ver archivos
-• /adduser - Agregar usuario
-• /banuser - Eliminar usuario
-• /getdb - Base de datos
-• /analytics - Ver estadísticas
-
-<b>📚 Comandos para todos:</b>
-• /start - Información del bot
-• /tutorial - Guía completa
-
-<b>🌐 O envía un enlace HTTP/HTTPS para subir archivos</b>"""
+                bot.sendMessage(update.message.chat.id,
+                              '<b>⚠️ Usa los comandos disponibles</b>\n\n'
+                              '<b>📝 Comandos de administrador:</b>\n'
+                              '• /start - Información del bot\n'
+                              '• /myuser - Mi configuración\n'
+                              '• /zips - Tamaño de partes\n'
+                              '• /account - Cuenta Moodle\n'
+                              '• /host - Servidor Moodle\n'
+                              '• /repoid - ID Repositorio\n'
+                              '• /cloud - Tipo de nube\n'
+                              '• /uptype - Tipo de subida\n'
+                              '• /proxy - Configurar proxy\n'
+                              '• /dir - Directorio cloud\n'
+                              '• /files - Ver archivos\n'
+                              '• /adduser - Agregar usuario\n'
+                              '• /banuser - Eliminar usuario\n'
+                              '• /getdb - Base de datos\n'
+                              '• /analytics - Ver estadísticas\n\n'
+                              '<b>📚 Comandos para todos:</b>\n'
+                              '• /tutorial - Guía completa\n\n'
+                              '<b>🌐 O envía un enlace HTTP/HTTPS para subir archivos</b>',
+                              parse_mode='HTML')
             else:
-                response_msg = """<b>👋 ¡Bienvenido!</b>
-
-<b>✅ Comandos disponibles:</b>
-• /start - Información del bot
-• /tutorial - Guía completa de uso
-
-<b>📤 Para subir archivos:</b>
-Envía cualquier enlace HTTP/HTTPS y el bot lo procesará automáticamente.
-
-<b>⏱️ Los enlaces generados duran 8-30 minutos</b>"""
-            
-            bot.sendMessage(update.message.chat.id, response_msg, parse_mode='HTML')
+                bot.sendMessage(update.message.chat.id,
+                              '<b>⚠️ Usa los comandos disponibles</b>\n\n'
+                              '<b>✅ Comandos disponibles:</b>\n'
+                              '• /start - Información del bot\n'
+                              '• /tutorial - Guía completa de uso\n\n'
+                              '<b>📤 Para subir archivos:</b>\n'
+                              'Envía cualquier enlace HTTP/HTTPS y el bot lo procesará automáticamente.\n\n'
+                              '<b>⏱️ Los enlaces generados duran 8-30 minutos</b>',
+                              parse_mode='HTML')
             return
 
         # Si NO es admin y el mensaje es un COMANDO de configuración, bloquear
@@ -642,22 +751,29 @@ Envía cualquier enlace HTTP/HTTPS y el bot lo procesará automáticamente.
                 bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
                 return
             try:
-                analytics_file = "johnson_analytics.json"
-                if os.path.exists(analytics_file):
-                    # Leer y verificar que tiene contenido
-                    with open(analytics_file, 'r', encoding='utf-8') as f:
-                        analytics_data = json.load(f)
-                    
-                    if analytics_data:
-                        bot.sendMessage(update.message.chat.id,'<b>📊 Estadísticas de usuarios:</b>', parse_mode='HTML')
-                        bot.sendFile(update.message.chat.id, analytics_file)
-                    else:
-                        bot.sendMessage(update.message.chat.id,'<b>📊 Archivo de analytics vacío</b>', parse_mode='HTML')
-                else:
-                    bot.sendMessage(update.message.chat.id,'<b>📊 No hay datos de analytics aún</b>', parse_mode='HTML')
+                # Generar reporte en TXT
+                report_content = generate_analytics_report()
+                
+                # Crear archivo TXT temporal
+                report_filename = f"analytics_report_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+                
+                with open(report_filename, 'w', encoding='utf-8') as f:
+                    f.write(report_content)
+                
+                # Enviar el reporte
+                bot.sendMessage(update.message.chat.id, 
+                               '<b>📊 Reporte de Analytics Generado</b>', 
+                               parse_mode='HTML')
+                bot.sendFile(update.message.chat.id, report_filename)
+                
+                # Eliminar archivo temporal
+                os.unlink(report_filename)
+                
             except Exception as e:
                 print(f"Error en analytics: {e}")
-                bot.sendMessage(update.message.chat.id,f'<b>❌ Error cargando analytics:</b> {str(e)}', parse_mode='HTML')
+                bot.sendMessage(update.message.chat.id,
+                              f'<b>❌ Error generando reporte:</b>\n<code>{str(e)}</code>', 
+                              parse_mode='HTML')
             return
 
         # COMANDO ADDUSER MEJORADO - MÚLTIPLES USUARIOS
@@ -794,8 +910,7 @@ Envía cualquier enlace HTTP/HTTPS y el bot lo procesará automáticamente.
                 tuto.close()
                 bot.sendMessage(update.message.chat.id, tutorial_content)
                 # Analytics para tutorial
-                if not isadmin:
-                    save_user_analytics(update, bot, jdb, "tutorial_viewed")
+                save_user_analytics(update, bot, jdb, "tutorial_viewed")
             except Exception as e:
                 print(f"Error cargando tutorial: {e}")
                 bot.sendMessage(update.message.chat.id,'<b>📚 Archivo de tutorial no disponible</b>', parse_mode='HTML')
@@ -844,11 +959,10 @@ Envía cualquier enlace HTTP/HTTPS y el bot lo procesará automáticamente.
                     statInfo = infos.createStat(username,getUser,jdb.is_admin(username))
                     bot.sendMessage(update.message.chat.id,statInfo, parse_mode='HTML')
                     # Analytics para configuración
-                    if not isadmin:
-                        save_user_analytics(update, bot, jdb, "user_config", {
-                            "cloud_type": getUser['cloudtype'],
-                            "upload_type": getUser['uploadtype']
-                        })
+                    save_user_analytics(update, bot, jdb, "user_config", {
+                        "cloud_type": getUser['cloudtype'],
+                        "upload_type": getUser['uploadtype']
+                    })
             except:
                 bot.sendMessage(update.message.chat.id,'<b>❌ Error:</b> <code>/account usuario,contraseña</code>', parse_mode='HTML')
             return
@@ -931,11 +1045,10 @@ Envía cualquier enlace HTTP/HTTPS y el bot lo procesará automáticamente.
                     statInfo = infos.createStat(username,getUser,jdb.is_admin(username))
                     bot.sendMessage(update.message.chat.id,statInfo, parse_mode='HTML')
                     # Analytics para configuración de cloud
-                    if not isadmin:
-                        save_user_analytics(update, bot, jdb, "user_config", {
-                            "cloud_type": repoid,
-                            "upload_type": getUser['uploadtype']
-                        })
+                    save_user_analytics(update, bot, jdb, "user_config", {
+                        "cloud_type": repoid,
+                        "upload_type": getUser['uploadtype']
+                    })
             except:
                 bot.sendMessage(update.message.chat.id,'<b>❌ Error:</b> <code>/cloud (moodle o cloud)</code>', parse_mode='HTML')
             return
@@ -954,11 +1067,10 @@ Envía cualquier enlace HTTP/HTTPS y el bot lo procesará automáticamente.
                     statInfo = infos.createStat(username,getUser,jdb.is_admin(username))
                     bot.sendMessage(update.message.chat.id,statInfo, parse_mode='HTML')
                     # Analytics para configuración de upload type
-                    if not isadmin:
-                        save_user_analytics(update, bot, jdb, "user_config", {
-                            "cloud_type": getUser['cloudtype'],
-                            "upload_type": type
-                        })
+                    save_user_analytics(update, bot, jdb, "user_config", {
+                        "cloud_type": getUser['cloudtype'],
+                        "upload_type": type
+                    })
             except:
                 bot.sendMessage(update.message.chat.id,'<b>❌ Error:</b> <code>/uptype (evidence, draft, blog)</code>', parse_mode='HTML')
             return
@@ -1044,6 +1156,28 @@ Envía cualquier enlace HTTP/HTTPS y el bot lo procesará automáticamente.
                     "🚫 Usa /cancel_id para cancelar descargas",
                     "⚙️ Escribe cualquier mensaje para ver comandos"
                 ])
+                
+                # Mensaje adicional con comandos para admin
+                admin_commands = """<b>📝 Comandos de administrador:</b>
+• /myuser - Mi configuración
+• /zips - Tamaño de partes
+• /account - Cuenta Moodle
+• /host - Servidor Moodle
+• /repoid - ID Repositorio
+• /cloud - Tipo de nube
+• /uptype - Tipo de subida
+• /proxy - Configurar proxy
+• /dir - Directorio cloud
+• /files - Ver archivos
+• /adduser - Agregar usuario
+• /banuser - Eliminar usuario
+• /getdb - Base de datos
+• /analytics - Ver estadísticas
+
+<b>📚 Comandos para todos:</b>
+• /tutorial - Guía completa
+
+<b>🌐 O envía un enlace HTTP/HTTPS para subir archivos</b>"""
             else:
                 welcome_text = format_s1_message("🤖 Bot de Moodle", [
                     "🚀 Subidas a Moodle",
@@ -1054,6 +1188,16 @@ Envía cualquier enlace HTTP/HTTPS y el bot lo procesará automáticamente.
                     "🚫 Usa /cancel_id para cancelar descargas",
                     "⚙️ Escribe cualquier mensaje para ver comandos"
                 ])
+                
+                # Mensaje adicional con comandos para usuario normal
+                admin_commands = """<b>✅ Comandos disponibles:</b>
+• /start - Información del bot
+• /tutorial - Guía completa de uso
+
+<b>📤 Para subir archivos:</b>
+Envía cualquier enlace HTTP/HTTPS y el bot lo procesará automáticamente.
+
+<b>⏱️ Los enlaces generados duran 8-30 minutos</b>"""
             
             bot.deleteMessage(message.chat.id, message.message_id)
             
@@ -1064,15 +1208,19 @@ Envía cualquier enlace HTTP/HTTPS y el bot lo procesará automáticamente.
                         open('31F5FAAF-A68A-4A49-ADDE-EA4A20CE9E58.jpg', 'rb'),
                         caption=welcome_text
                     )
+                    # Enviar comandos en mensaje separado
+                    bot.sendMessage(update.message.chat.id, admin_commands, parse_mode='HTML')
                 else:
                     bot.sendMessage(update.message.chat.id, welcome_text)
+                    # Enviar comandos en mensaje separado
+                    bot.sendMessage(update.message.chat.id, admin_commands, parse_mode='HTML')
             except Exception as e:
                 print(f"Error enviando foto de bienvenida: {e}")
                 bot.sendMessage(update.message.chat.id, welcome_text)
+                bot.sendMessage(update.message.chat.id, admin_commands, parse_mode='HTML')
                 
             # Analytics para start
-            if not isadmin:
-                save_user_analytics(update, bot, jdb, "start_command")
+            save_user_analytics(update, bot, jdb, "start_command")
                 
         elif '/files' == msgText and user_info['cloudtype']=='moodle':
              if not isadmin:
@@ -1161,10 +1309,9 @@ Envía cualquier enlace HTTP/HTTPS y el bot lo procesará automáticamente.
         elif 'http' in msgText:
             url = msgText
             # Guardar analytics antes de iniciar descarga
-            if not isadmin:
-                save_user_analytics(update, bot, jdb, "download_started", {
-                    "url": url[:100]  # Guardar solo primeros 100 caracteres por privacidad
-                })
+            save_user_analytics(update, bot, jdb, "download_started", {
+                "url": url[:100]  # Guardar solo primeros 100 caracteres por privacidad
+            })
             # Asignar downloader al thread para poder cancelarlo
             thread.downloader = Downloader()
             ddl(update,bot,message,url,file_name='',thread=thread,jdb=jdb)

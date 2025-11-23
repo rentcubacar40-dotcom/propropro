@@ -136,8 +136,7 @@ def uploadFile(filename,currentBits,totalBits,speed,time,args):
             f"📦 Tamaño: {current_mb:.2f}/{total_mb:.2f} MB",
             f"⚡ Velocidad: {speed_mb:.2f} MB/s",
             f"⏳ Tiempo: {eta_formatted}",
-            f"📄 Archivo: {file_display}",
-            f"🚫 Cancelar: /cancel_{thread.cancel_id}"
+            f"📄 Archivo: {file_display}"
         ])
             
         bot.editMessageText(message, uploadingInfo)
@@ -193,7 +192,7 @@ def processUploadFiles(filename,filesize,files,update,bot,message,thread=None,jd
                     part_info = (i, total_parts, filename)
                 
                 while resp is None:
-                    if thread.getStore('stop'):
+                    if thread and thread.getStore('stop'):
                         break
                     if user_info['uploadtype'] == 'evidence':
                         fileid,resp = client.upload_file(f,evidence,fileid,
@@ -222,11 +221,11 @@ def processUploadFiles(filename,filesize,files,update,bot,message,thread=None,jd
                     iter += 1
                     if iter>=10:
                         break
-                if thread.getStore('stop'):
+                if thread and thread.getStore('stop'):
                     break
                 os.unlink(f)
                 
-            if thread.getStore('stop'):
+            if thread and thread.getStore('stop'):
                 return None
                 
             if user_info['uploadtype'] == 'evidence':
@@ -252,7 +251,7 @@ def processUploadFiles(filename,filesize,files,update,bot,message,thread=None,jd
             total_parts = len(files)
             filesdata = []
             for i, f in enumerate(files, 1):
-                if thread.getStore('stop'):
+                if thread and thread.getStore('stop'):
                     break
                     
                 part_info = None
@@ -266,7 +265,7 @@ def processUploadFiles(filename,filesize,files,update,bot,message,thread=None,jd
                 filesdata.append(data)
                 os.unlink(f)
                 
-            if thread.getStore('stop'):
+            if thread and thread.getStore('stop'):
                 return None
                 
             return filesdata
@@ -278,13 +277,14 @@ def processUploadFiles(filename,filesize,files,update,bot,message,thread=None,jd
 def processFile(update,bot,message,file,thread=None,jdb=None):
     try:
         file_size = get_file_size(file)
-        getUser = jdb.get_user(update.message.sender.username)
+        username = update.message.sender.username
+        getUser = jdb.get_user(username)
         max_file_size = 1024 * 1024 * getUser['zips']
         file_upload_count = 0
         client = None
         findex = 0
         
-        if thread.getStore('stop'):
+        if thread and thread.getStore('stop'):
             try:
                 os.unlink(file)
             except:pass
@@ -308,8 +308,21 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
             client = processUploadFiles(file,file_size,[file],update,bot,message,thread=thread,jdb=jdb)
             file_upload_count = 1
             
-        if thread.getStore('stop'):
+        if thread and thread.getStore('stop'):
             return
+            
+        # ACTUALIZAR ESTADÍSTICAS DE USO
+        try:
+            file_size_mb = file_size / (1024 * 1024)
+            current_total = getUser.get('total_mb_used', 0)
+            new_total = current_total + file_size_mb
+            getUser['total_mb_used'] = new_total
+            getUser['last_upload'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            getUser['upload_count'] = getUser.get('upload_count', 0) + 1
+            jdb.save_data_user(username, getUser)
+            jdb.save()
+        except Exception as e:
+            print(f"Error actualizando estadísticas: {e}")
             
         bot.editMessageText(message,'<b>📄 Preparando enlaces...</b>', parse_mode='HTML')
         evidname = ''
@@ -433,19 +446,8 @@ def sendTxt(name,files,update,bot):
 
 ⬇️ <b>Descarga el archivo TXT abajo</b>"""
         
-        try:
-            if os.path.exists('31F5FAAF-A68A-4A49-ADDE-EA4A20CE9E58.jpg'):
-                bot.sendPhoto(update.message.chat.id,
-                            open('31F5FAAF-A68A-4A49-ADDE-EA4A20CE9E58.jpg', 'rb'),
-                            caption=info_msg,
-                            parse_mode='HTML')
-                bot.sendFile(update.message.chat.id, name, caption="📁 Archivo de enlaces")
-            else:
-                bot.sendFile(update.message.chat.id, name, caption=info_msg, parse_mode='HTML')
-                
-        except Exception as e:
-            print(f"Error enviando con thumbnail: {e}")
-            bot.sendFile(update.message.chat.id, name, caption=info_msg, parse_mode='HTML')
+        # Enviar solo el TXT sin thumbnail
+        bot.sendFile(update.message.chat.id, name, caption=info_msg, parse_mode='HTML')
         
         os.unlink(name)
         
@@ -500,7 +502,7 @@ def onmessage(update,bot:ObigramClient):
         if not isadmin and is_text and any(cmd in msgText for cmd in [
             '/zips', '/account', '/host', '/repoid', '/tokenize', 
             '/cloud', '/uptype', '/proxy', '/dir', '/myuser', 
-            '/files', '/txt_', '/del_', '/delall', '/adduser', '/banuser', '/getdb', '/process'
+            '/files', '/txt_', '/del_', '/delall', '/adduser', '/banuser', '/getdb', '/informacion'
         ]):
             bot.sendMessage(update.message.chat.id,
                            "<b>🚫 Acceso Restringido</b>\n\n"
@@ -520,6 +522,7 @@ def onmessage(update,bot:ObigramClient):
                            parse_mode='HTML')
             return
 
+        # COMANDO ADDUSER MEJORADO - MÚLTIPLES USUARIOS
         if '/adduser' in msgText:
             isadmin = jdb.is_admin(username)
             if isadmin:
@@ -574,6 +577,7 @@ def onmessage(update,bot:ObigramClient):
                 bot.sendMessage(update.message.chat.id,'<b>❌ No tiene permisos de administrador</b>', parse_mode='HTML')
             return
 
+        # COMANDO BANUSER MEJORADO - MÚLTIPLES USUARIOS
         if '/banuser' in msgText:
             isadmin = jdb.is_admin(username)
             if isadmin:
@@ -644,56 +648,90 @@ def onmessage(update,bot:ObigramClient):
                 bot.sendMessage(update.message.chat.id,'<b>❌ No tiene permisos de administrador</b>', parse_mode='HTML')
             return
 
-        if '/process' in msgText:
+        # COMANDO INFORMACION - VER INFORMACIÓN COMPLETA DE USUARIOS
+        if '/informacion' in msgText:
             isadmin = jdb.is_admin(username)
             if isadmin:
                 try:
-                    all_users = jdb.get_all_users()
+                    all_users_data = jdb.get_all_users()
                     
-                    stats_info = "<b>📊 ESTADÍSTICAS DE USO</b>\n\n"
-                    total_global_mb = 0
-                    user_count = 0
+                    info_message = "<b>📊 INFORMACIÓN COMPLETA DE USUARIOS</b>\n\n"
+                    total_users = 0
+                    total_mb_used = 0
+                    total_uploads = 0
+                    active_users = 0
                     
-                    for user_data in all_users:
-                        username_stat = user_data['username']
-                        if username_stat != 'db':
-                            user_count += 1
+                    for user_data in all_users_data:
+                        user_id = user_data.get('username', '')
+                        if user_id != 'db' and user_id != '':
+                            total_users += 1
+                            user_info = jdb.get_user(user_id)
                             
-                            user_stat = jdb.get_user(username_stat)
-                            if user_stat:
-                                total_mb_used = user_stat.get('total_mb_used', 0)
-                                total_global_mb += total_mb_used
+                            if user_info:
+                                # Estadísticas del usuario
+                                mb_used = user_info.get('total_mb_used', 0)
+                                upload_count = user_info.get('upload_count', 0)
+                                last_upload = user_info.get('last_upload', 'Nunca')
+                                user_type = "👑 Admin" if jdb.is_admin(user_id) else "👤 User"
+                                created_date = user_info.get('created', 'Desconocida')
+                                cloud_type = user_info.get('cloudtype', 'moodle')
+                                upload_type = user_info.get('uploadtype', 'evidence')
+                                zip_size = user_info.get('zips', 100)
                                 
-                                if total_mb_used >= 1024:
-                                    size_display = f"{total_mb_used/1024:.2f} GB"
+                                total_mb_used += mb_used
+                                total_uploads += upload_count
+                                
+                                if upload_count > 0:
+                                    active_users += 1
+                                
+                                # Formatear tamaño usado
+                                if mb_used >= 1024:
+                                    size_display = f"{mb_used/1024:.2f} GB"
                                 else:
-                                    size_display = f"{total_mb_used:.2f} MB"
+                                    size_display = f"{mb_used:.2f} MB"
                                 
-                                user_type = "👑 Admin" if jdb.is_admin(username_stat) else "👤 User"
-                                
-                                stats_info += f"<b>{user_count}. {user_type}:</b> @{username_stat}\n"
-                                stats_info += f"   <b>💾 Espacio usado:</b> {size_display}\n"
-                                stats_info += f"   <b>📅 Registrado:</b> {user_stat.get('created', 'N/A')}\n\n"
+                                info_message += f"<b>🔹 Usuario:</b> @{user_id}\n"
+                                info_message += f"<b>   Tipo:</b> {user_type}\n"
+                                info_message += f"<b>   💾 Espacio usado:</b> {size_display}\n"
+                                info_message += f"<b>   📤 Subidas realizadas:</b> {upload_count}\n"
+                                info_message += f"<b>   ⏰ Última subida:</b> {last_upload}\n"
+                                info_message += f"<b>   ☁️ Nube:</b> {cloud_type}\n"
+                                info_message += f"<b>   📝 Tipo subida:</b> {upload_type}\n"
+                                info_message += f"<b>   🗜️ Tamaño partes:</b> {zip_size} MB\n"
+                                info_message += f"<b>   📅 Registrado:</b> {created_date}\n"
+                                info_message += "━━━━━━━━━━━━━━━━━━━━\n\n"
                     
-                    if total_global_mb >= 1024:
-                        global_display = f"{total_global_mb/1024:.2f} GB"
+                    # Estadísticas globales
+                    if total_mb_used >= 1024:
+                        global_size = f"{total_mb_used/1024:.2f} GB"
                     else:
-                        global_display = f"{total_global_mb:.2f} MB"
+                        global_size = f"{total_mb_used:.2f} MB"
                     
-                    stats_info += f"<b>📈 ESTADÍSTICAS GLOBALES:</b>\n"
-                    stats_info += f"<b>• 👥 Total usuarios:</b> {user_count}\n"
-                    stats_info += f"<b>• 💽 Espacio total usado:</b> {global_display}\n"
-                    stats_info += f"<b>• 📊 Promedio por usuario:</b> {total_global_mb/user_count:.2f} MB" if user_count > 0 else "<b>• 📊 Promedio por usuario:</b> 0 MB"
+                    info_message += f"<b>📈 ESTADÍSTICAS GLOBALES:</b>\n"
+                    info_message += f"<b>• 👥 Total usuarios:</b> {total_users}\n"
+                    info_message += f"<b>• 🟢 Usuarios activos:</b> {active_users}\n"
+                    info_message += f"<b>• 🔴 Usuarios inactivos:</b> {total_users - active_users}\n"
+                    info_message += f"<b>• 💽 Espacio total usado:</b> {global_size}\n"
+                    info_message += f"<b>• 📤 Total de subidas:</b> {total_uploads}\n"
                     
-                    bot.sendMessage(update.message.chat.id, stats_info, parse_mode='HTML')
+                    if total_users > 0:
+                        avg_usage = total_mb_used / total_users
+                        avg_uploads = total_uploads / total_users
+                        info_message += f"<b>• 📊 Promedio por usuario:</b> {avg_usage:.2f} MB\n"
+                        info_message += f"<b>• 📦 Subidas por usuario:</b> {avg_uploads:.1f}\n"
+                    
+                    bot.sendMessage(update.message.chat.id, info_message, parse_mode='HTML')
                         
                 except Exception as e:
-                    print(f"Error en process: {e}")
-                    bot.sendMessage(update.message.chat.id, "<b>❌ Error al obtener estadísticas</b>", parse_mode='HTML')
+                    print(f"Error en informacion: {e}")
+                    bot.sendMessage(update.message.chat.id, 
+                                   f"<b>❌ Error al obtener información</b>\n<code>{str(e)}</code>", 
+                                   parse_mode='HTML')
             else:
                 bot.sendMessage(update.message.chat.id,'<b>❌ No tiene permisos de administrador</b>', parse_mode='HTML')
             return
 
+        # COMANDO TUTORIAL - DISPONIBLE PARA TODOS
         if '/tutorial' in msgText:
             try:
                 tuto = open('tuto.txt','r', encoding='utf-8')
@@ -705,6 +743,7 @@ def onmessage(update,bot:ObigramClient):
                 bot.sendMessage(update.message.chat.id,'<b>📚 Archivo de tutorial no disponible</b>', parse_mode='HTML')
             return
 
+        # comandos de usuario (solo para administrador)
         if '/myuser' in msgText:
             if not isadmin:
                 bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
@@ -924,7 +963,7 @@ def onmessage(update,bot:ObigramClient):
                     "• /proxy - Configurar proxy",
                     "• /dir - Directorio cloud",
                     "• /files - Ver archivos",
-                    "• /process - Estadísticas",
+                    "• /informacion - Info usuarios",
                     "• /adduser - Agregar usuario",
                     "• /banuser - Eliminar usuario",
                     "• /getdb - Base de datos",
@@ -945,19 +984,8 @@ def onmessage(update,bot:ObigramClient):
                 ])
             
             bot.deleteMessage(message.chat.id, message.message_id)
-            
-            try:
-                if os.path.exists('31F5FAAF-A68A-4A49-ADDE-EA4A20CE9E58.jpg'):
-                    bot.sendPhoto(
-                        update.message.chat.id,
-                        open('31F5FAAF-A68A-4A49-ADDE-EA4A20CE9E58.jpg', 'rb'),
-                        caption=welcome_text
-                    )
-                else:
-                    bot.sendMessage(update.message.chat.id, welcome_text)
-            except Exception as e:
-                print(f"Error enviando foto de bienvenida: {e}")
-                bot.sendMessage(update.message.chat.id, welcome_text)
+            # Enviar solo texto sin foto
+            bot.sendMessage(update.message.chat.id, welcome_text)
         elif '/files' == msgText and user_info['cloudtype']=='moodle':
              if not isadmin:
                 bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')

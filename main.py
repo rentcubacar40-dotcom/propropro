@@ -144,12 +144,16 @@ def uploadFile(filename,currentBits,totalBits,speed,time,args):
         print(str(ex))
     pass
 
-def processUploadFiles(filename,filesize,files,update,bot,message,thread=None,jdb=None):
+def processUploadFiles(filename,filesize,files,update,bot,message,thread=None,jdb=None, user_info=None):
     try:
         bot.editMessageText(message,'<b>🔄 Preparando para subir...</b>', parse_mode='HTML')
         evidence = None
         fileid = None
-        user_info = jdb.get_user(update.message.sender.username)
+        
+        # ✅ USAR user_info PASADO COMO PARÁMETRO
+        if user_info is None:
+            user_info = jdb.get_user(update.message.sender.username)
+            
         cloudtype = user_info['cloudtype']
         proxy = ProxyCloud.parse(user_info['proxy'])
         if cloudtype == 'moodle':
@@ -274,12 +278,16 @@ def processUploadFiles(filename,filesize,files,update,bot,message,thread=None,jd
         bot.editMessageText(message,f'<b>❌ Error</b>\n<code>{str(ex)}</code>', parse_mode='HTML')
         return None
 
-def processFile(update,bot,message,file,thread=None,jdb=None):
+def processFile(update,bot,message,file,thread=None,jdb=None, user_info=None):
     try:
         file_size = get_file_size(file)
         username = update.message.sender.username
-        getUser = jdb.get_user(username)
-        max_file_size = 1024 * 1024 * getUser['zips']
+        
+        # ✅ USAR user_info PASADO COMO PARÁMETRO O OBTENERLO
+        if user_info is None:
+            user_info = jdb.get_user(username)
+            
+        max_file_size = 1024 * 1024 * user_info['zips']
         file_upload_count = 0
         client = None
         findex = 0
@@ -304,15 +312,15 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
             zip.close()
             mult_file.close()
             
-            # Usar el nombre base original para la subida, no el archivo temporal
-            client = processUploadFiles(original_filename,file_size,mult_file.files,update,bot,message,thread=thread,jdb=jdb)
+            # ✅ PASAR user_info A processUploadFiles
+            client = processUploadFiles(original_filename,file_size,mult_file.files,update,bot,message,thread=thread,jdb=jdb, user_info=user_info)
             try:
                 os.unlink(file)
             except:pass
             file_upload_count = len(mult_file.files)
         else:
-            # Para archivos pequeños, usar el nombre original
-            client = processUploadFiles(original_filename,file_size,[file],update,bot,message,thread=thread,jdb=jdb)
+            # ✅ PASAR user_info A processUploadFiles
+            client = processUploadFiles(original_filename,file_size,[file],update,bot,message,thread=thread,jdb=jdb, user_info=user_info)
             file_upload_count = 1
             
         if thread and thread.getStore('stop'):
@@ -321,12 +329,12 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
         # ACTUALIZAR ESTADÍSTICAS DE USO
         try:
             file_size_mb = file_size / (1024 * 1024)
-            current_total = getUser.get('total_mb_used', 0)
+            current_total = user_info.get('total_mb_used', 0)
             new_total = current_total + file_size_mb
-            getUser['total_mb_used'] = new_total
-            getUser['last_upload'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            getUser['upload_count'] = getUser.get('upload_count', 0) + 1
-            jdb.save_data_user(username, getUser)
+            user_info['total_mb_used'] = new_total
+            user_info['last_upload'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            user_info['upload_count'] = user_info.get('upload_count', 0) + 1
+            jdb.save_data_user(username, user_info)
             jdb.save()
         except Exception as e:
             print(f"Error actualizando estadísticas: {e}")
@@ -335,38 +343,48 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
         evidname = ''
         files = []
         if client:
-            if getUser['cloudtype'] == 'moodle':
-                if getUser['uploadtype'] == 'evidence':
+            if user_info['cloudtype'] == 'moodle':
+                if user_info['uploadtype'] == 'evidence':
                     try:
-                        evidname = base_name  # Usar el nombre base original
+                        evidname = base_name
                         txtname = evidname + '.txt'
-                        evidences = client.getEvidences()
-                        for ev in evidences:
-                            if ev['name'] == evidname:
-                               files = ev['files']
-                               break
-                            if len(ev['files'])>0:
-                               findex+=1
-                        client.logout()
-                    except:pass
-                if getUser['uploadtype'] == 'draft' or getUser['uploadtype'] == 'blog' or getUser['uploadtype']=='calendario':
+                        # Para evidence necesitamos un cliente nuevo para obtener los archivos
+                        proxy = ProxyCloud.parse(user_info['proxy'])
+                        evidence_client = MoodleClient(user_info['moodle_user'],
+                                                     user_info['moodle_password'],
+                                                     user_info['moodle_host'],
+                                                     user_info['moodle_repo_id'],
+                                                     proxy=proxy)
+                        if evidence_client.login():
+                            evidences = evidence_client.getEvidences()
+                            for ev in evidences:
+                                if ev['name'] == evidname:
+                                   files = ev['files']
+                                   break
+                            evidence_client.logout()
+                    except Exception as e:
+                        print(f"Error obteniendo evidences: {e}")
+                if user_info['uploadtype'] == 'draft' or user_info['uploadtype'] == 'blog' or user_info['uploadtype']=='calendario':
                    for draft in client:
                        files.append({'name':draft['file'],'directurl':draft['url']})
             else:
                 for data in client:
                     files.append({'name':data['name'],'directurl':data['url']})
 
-            # EXTENDER LA CONDICIÓN DEL WEBSERVICE PARA EVA Y CURSOS
+            # ✅ USAR user_info CORRECTO PARA WEBSERVICE
             for i in range(len(files)):
                 url = files[i]['directurl']
-                if 'aulacened.uci.cu' in url or 'eva.uo.edu.cu' in url or 'cursos.uo.edu.cu' in url:
-                    files[i]['directurl'] = url.replace('://aulacened.uci.cu/', '://aulacened.uci.cu/webservice/')
-                    files[i]['directurl'] = url.replace('://eva.uo.edu.cu/', '://eva.uo.edu.cu/webservice/')
-                    files[i]['directurl'] = url.replace('://cursos.uo.edu.cu/', '://cursos.uo.edu.cu/webservice/')
+                host = user_info.get('moodle_host', '')
+                if 'aulacened.uci.cu' in host or 'eva.uo.edu.cu' in host or 'cursos.uo.edu.cu' in host:
+                    if 'aulacened.uci.cu' in url:
+                        files[i]['directurl'] = url.replace('://aulacened.uci.cu/', '://aulacened.uci.cu/webservice/')
+                    if 'eva.uo.edu.cu' in url:
+                        files[i]['directurl'] = url.replace('://eva.uo.edu.cu/', '://eva.uo.edu.cu/webservice/')
+                    if 'cursos.uo.edu.cu' in url:
+                        files[i]['directurl'] = url.replace('://cursos.uo.edu.cu/', '://cursos.uo.edu.cu/webservice/')
 
             bot.deleteMessage(message.chat.id,message.message_id)
             
-            # Usar el nombre original del archivo
             total_parts = file_upload_count
             
             if total_parts > 1:
@@ -374,8 +392,9 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
             else:
                 finish_title = "✅ Subida Completada"
                 
-            # DETERMINAR MENSAJE SEGÚN LA NUBE
-            if 'eva.uo.edu.cu' in user_info.get('moodle_host', '') or 'cursos.uo.edu.cu' in user_info.get('moodle_host', ''):
+            # ✅ USAR user_info CORRECTO PARA DETERMINAR MENSAJE
+            host = user_info.get('moodle_host', '')
+            if 'eva.uo.edu.cu' in host or 'cursos.uo.edu.cu' in host:
                 finishInfo = format_s1_message(finish_title, [
                     f"📄 Archivo: {original_filename}",
                     f"📦 Tamaño total: {sizeof_fmt(file_size)}",
@@ -394,9 +413,9 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
             bot.sendMessage(message.chat.id, finishInfo)
             
             if len(files) > 0:
-                filesInfo = infos.createFileMsg(original_filename,files)  # Pasar nombre original
+                filesInfo = infos.createFileMsg(original_filename,files)
                 bot.sendMessage(message.chat.id, filesInfo, parse_mode='html')
-                txtname = base_name + '.txt'  # Usar nombre base para el TXT
+                txtname = base_name + '.txt'
                 sendTxt(txtname,files,update,bot)
     except Exception as ex:
         print(f"Error en processFile: {ex}")
@@ -410,7 +429,10 @@ def ddl(update,bot,message,url,file_name='',thread=None,jdb=None):
         file = downloader.download_url(url,progressfunc=downloadFile,args=(bot,message,thread))
         if not downloader.stoping:
             if file:
-                processFile(update,bot,message,file,thread=thread,jdb=jdb)
+                # ✅ OBTENER user_info ACTUAL Y PASARLO
+                username = update.message.sender.username
+                user_info = jdb.get_user(username)
+                processFile(update,bot,message,file,thread=thread,jdb=jdb, user_info=user_info)
             else:
                 megadl(update,bot,message,url,file_name,thread,jdb=jdb)
         
@@ -431,14 +453,20 @@ def megadl(update,bot,message,megaurl,file_name='',thread=None,jdb=None):
             file_name = info['name']
             megadl.download_url(megaurl,dest_path=None,dest_filename=file_name,progressfunc=downloadFile,args=(bot,message,thread))
             if not megadl.stoping:
-                processFile(update,bot,message,file_name,thread=thread)
+                # ✅ OBTENER user_info ACTUAL Y PASARLO
+                username = update.message.sender.username
+                user_info = jdb.get_user(username)
+                processFile(update,bot,message,file_name,thread=thread, user_info=user_info)
         except:
             files = megaf.get_files_from_folder(megaurl)
             for f in files:
                 file_name = f['name']
                 megadl._download_file(f['handle'],f['key'],dest_path=None,dest_filename=file_name,is_public=False,progressfunc=downloadFile,args=(bot,message,thread),f_data=f['data'])
                 if not megadl.stoping:
-                    processFile(update,bot,message,file_name,thread=thread)
+                    # ✅ OBTENER user_info ACTUAL Y PASARLO
+                    username = update.message.sender.username
+                    user_info = jdb.get_user(username)
+                    processFile(update,bot,message,file_name,thread=thread, user_info=user_info)
             pass
         
         if hasattr(thread, 'cancel_id') and thread.cancel_id in bot.threads:
@@ -465,9 +493,7 @@ def sendTxt(name,files,update,bot):
 
 ⬇️ <b>Descarga el archivo TXT abajo</b>"""
         
-        # Enviar solo el TXT sin thumbnail
         bot.sendFile(update.message.chat.id, name, caption=info_msg, parse_mode='HTML')
-        
         os.unlink(name)
         
     except Exception as ex:
@@ -495,7 +521,6 @@ def get_user_files(user_info, proxy):
         files_list = []
         
         if user_info['uploadtype'] == 'evidence':
-            # Para evidence - usar getEvidences
             evidences = client.getEvidences()
             for ev in evidences:
                 for file in ev['files']:
@@ -507,7 +532,6 @@ def get_user_files(user_info, proxy):
                     })
                     
         elif user_info['uploadtype'] == 'draft':
-            # Para draft - usar getFiles (archivos en user/files.php)
             moodle_files = client.getFiles()
             for file_info in moodle_files:
                 if 'filename' in file_info:
@@ -541,7 +565,6 @@ def delete_user_file(user_info, proxy, file_identifier):
         message = ""
         
         if user_info['uploadtype'] == 'draft':
-            # Para draft - usar deleteFile (corregido del MoodleClient)
             try:
                 result = client.deleteFile(file_identifier)
                 success = True
@@ -551,7 +574,6 @@ def delete_user_file(user_info, proxy, file_identifier):
                 message = f"❌ Error eliminando archivo: {str(e)}"
                 
         elif user_info['uploadtype'] == 'evidence':
-            # Para evidence - buscar y eliminar evidence completo
             evidences = client.getEvidences()
             for ev in evidences:
                 if ev['name'] == file_identifier:
@@ -709,7 +731,6 @@ def onmessage(update,bot:ObigramClient):
             try:
                 parts = msgText.split(' ', 1)
                 if len(parts) < 2:
-                    # Mostrar ayuda y lista de archivos
                     proxy = ProxyCloud.parse(user_info['proxy'])
                     files_list = get_user_files(user_info, proxy)
                     
@@ -724,12 +745,11 @@ def onmessage(update,bot:ObigramClient):
                                        parse_mode='HTML')
                         return
                     
-                    # Mostrar lista de archivos disponibles
                     files_text = "<b>🗑️ Eliminar Archivos</b>\n\n"
                     files_text += "📝 <b>Uso:</b> <code>/eliminar nombre_archivo</code>\n\n"
                     files_text += "📋 <b>Archivos disponibles:</b>\n"
                     
-                    for i, file_info in enumerate(files_list[:10]):  # Mostrar máximo 10 archivos
+                    for i, file_info in enumerate(files_list[:10]):
                         files_text += f"{i+1}. <code>{file_info['name']}</code>\n"
                     
                     if len(files_list) > 10:
@@ -742,18 +762,15 @@ def onmessage(update,bot:ObigramClient):
                 
                 file_to_delete = parts[1].strip()
                 
-                # Mostrar mensaje de procesamiento
                 processing_msg = bot.sendMessage(update.message.chat.id,
                                                f"🔍 <b>Buscando y eliminando:</b>\n"
                                                f"<code>{file_to_delete}</code>\n\n"
                                                f"⏳ <b>Procesando...</b>",
                                                parse_mode='HTML')
                 
-                # Eliminar archivo
                 proxy = ProxyCloud.parse(user_info['proxy'])
                 success, message = delete_user_file(user_info, proxy, file_to_delete)
                 
-                # Actualizar mensaje con resultado
                 bot.editMessageText(processing_msg, message, parse_mode='HTML')
                 
             except Exception as e:
@@ -950,7 +967,6 @@ def onmessage(update,bot:ObigramClient):
             try:
                 cmd = str(msgText).split(' ',2)
                 host = cmd[1]
-                # Asegurar que el host termine con /
                 if not host.endswith('/'):
                     host += '/'
                 getUser = user_info

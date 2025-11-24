@@ -356,10 +356,13 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
                 for data in client:
                     files.append({'name':data['name'],'directurl':data['url']})
 
+            # EXTENDER LA CONDICIÓN DEL WEBSERVICE PARA EVA Y CURSOS
             for i in range(len(files)):
                 url = files[i]['directurl']
-                if 'aulacened.uci.cu' in url:
+                if 'aulacened.uci.cu' in url or 'eva.uo.edu.cu' in url or 'cursos.uo.edu.cu' in url:
                     files[i]['directurl'] = url.replace('://aulacened.uci.cu/', '://aulacened.uci.cu/webservice/')
+                    files[i]['directurl'] = url.replace('://eva.uo.edu.cu/', '://eva.uo.edu.cu/webservice/')
+                    files[i]['directurl'] = url.replace('://cursos.uo.edu.cu/', '://cursos.uo.edu.cu/webservice/')
 
             bot.deleteMessage(message.chat.id,message.message_id)
             
@@ -371,13 +374,22 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
             else:
                 finish_title = "✅ Subida Completada"
                 
-            finishInfo = format_s1_message(finish_title, [
-                f"📄 Archivo: {original_filename}",
-                f"📦 Tamaño total: {sizeof_fmt(file_size)}",
-                f"🔗 Enlaces generados: {len(files)}",
-                f"⏱️ Duración enlaces: 8-30 minutos",
-                f"💾 Partes: {total_parts}" if total_parts > 1 else "💾 Archivo único"
-            ])
+            # DETERMINAR MENSAJE SEGÚN LA NUBE
+            if 'eva.uo.edu.cu' in user_info.get('moodle_host', '') or 'cursos.uo.edu.cu' in user_info.get('moodle_host', ''):
+                finishInfo = format_s1_message(finish_title, [
+                    f"📄 Archivo: {original_filename}",
+                    f"📦 Tamaño total: {sizeof_fmt(file_size)}",
+                    f"🔗 Enlaces generados: {len(files)}",
+                    f"💾 Partes: {total_parts}" if total_parts > 1 else "💾 Archivo único"
+                ])
+            else:
+                finishInfo = format_s1_message(finish_title, [
+                    f"📄 Archivo: {original_filename}",
+                    f"📦 Tamaño total: {sizeof_fmt(file_size)}",
+                    f"🔗 Enlaces generados: {len(files)}",
+                    f"⏱️ Duración enlaces: 8-30 minutos",
+                    f"💾 Partes: {total_parts}" if total_parts > 1 else "💾 Archivo único"
+                ])
             
             bot.sendMessage(message.chat.id, finishInfo)
             
@@ -467,6 +479,95 @@ def sendTxt(name,files,update,bot):
         except:
             pass
 
+# NUEVA FUNCIÓN: Obtener archivos del usuario según el tipo de upload
+def get_user_files(user_info, proxy):
+    """Obtiene lista de archivos según el tipo de upload"""
+    try:
+        client = MoodleClient(user_info['moodle_user'],
+                              user_info['moodle_password'],
+                              user_info['moodle_host'],
+                              user_info['moodle_repo_id'],
+                              proxy=proxy)
+        loged = client.login()
+        if not loged:
+            return None
+            
+        files_list = []
+        
+        if user_info['uploadtype'] == 'evidence':
+            # Para evidence - usar getEvidences
+            evidences = client.getEvidences()
+            for ev in evidences:
+                for file in ev['files']:
+                    files_list.append({
+                        'name': file['name'],
+                        'url': file['url'],
+                        'type': 'evidence',
+                        'evidence_id': ev['id']
+                    })
+                    
+        elif user_info['uploadtype'] == 'draft':
+            # Para draft - usar getFiles (archivos en user/files.php)
+            moodle_files = client.getFiles()
+            for file_info in moodle_files:
+                if 'filename' in file_info:
+                    files_list.append({
+                        'name': file_info['filename'],
+                        'url': file_info.get('url', ''),
+                        'type': 'draft'
+                    })
+                    
+        client.logout()
+        return files_list
+        
+    except Exception as e:
+        print(f"Error obteniendo archivos: {e}")
+        return None
+
+# NUEVA FUNCIÓN: Eliminar archivo del usuario
+def delete_user_file(user_info, proxy, file_identifier):
+    """Elimina archivo según el tipo de upload"""
+    try:
+        client = MoodleClient(user_info['moodle_user'],
+                              user_info['moodle_password'],
+                              user_info['moodle_host'],
+                              user_info['moodle_repo_id'],
+                              proxy=proxy)
+        loged = client.login()
+        if not loged:
+            return False, "Error de conexión"
+            
+        success = False
+        message = ""
+        
+        if user_info['uploadtype'] == 'draft':
+            # Para draft - usar deleteFile (corregido del MoodleClient)
+            try:
+                result = client.deleteFile(file_identifier)
+                success = True
+                message = f"✅ Archivo '{file_identifier}' eliminado de draft"
+            except Exception as e:
+                success = False
+                message = f"❌ Error eliminando archivo: {str(e)}"
+                
+        elif user_info['uploadtype'] == 'evidence':
+            # Para evidence - buscar y eliminar evidence completo
+            evidences = client.getEvidences()
+            for ev in evidences:
+                if ev['name'] == file_identifier:
+                    client.deleteEvidence(ev)
+                    success = True
+                    message = f"✅ Evidence '{file_identifier}' eliminado"
+                    break
+            if not success:
+                message = f"❌ Evidence '{file_identifier}' no encontrado"
+                
+        client.logout()
+        return success, message
+        
+    except Exception as e:
+        return False, f"❌ Error: {str(e)}"
+
 def onmessage(update,bot:ObigramClient):
     try:
         thread = bot.this_thread
@@ -517,6 +618,10 @@ def onmessage(update,bot:ObigramClient):
                            "<b>✅ Comandos disponibles para ti:</b>\n"
                            "• /start - Información del bot\n"
                            "• /tutorial - Guía de uso completo\n"
+                           "• /eva - Configurar para Eva\n"
+                           "• /cursos - Configurar para Cursos\n"
+                           "• /cened - Configurar para Cened\n"
+                           "• /del_link - Eliminar enlace\n"
                            "• Enlaces HTTP/HTTPS para subir archivos",
                            parse_mode='HTML')
             return
@@ -527,6 +632,133 @@ def onmessage(update,bot:ObigramClient):
                            "📤 <b>Para subir archivos:</b> Envía un enlace HTTP/HTTPS\n\n"
                            "📝 <b>Para ver comandos disponibles:</b> Usa /start",
                            parse_mode='HTML')
+            return
+
+        # NUEVOS COMANDOS PARA CONFIGURAR PLATAFORMAS - ACCESO PARA TODOS
+        if '/eva' in msgText:
+            try:
+                getUser = user_info
+                if getUser:
+                    getUser['moodle_host'] = 'https://eva.uo.edu.cu'
+                    getUser['moodle_user'] = 'eric.serrano'
+                    getUser['moodle_password'] = 'Rulebreaker2316'
+                    getUser['moodle_repo_id'] = 4
+                    getUser['uploadtype'] = 'draft'
+                    getUser['cloudtype'] = 'moodle'
+                    jdb.save_data_user(username, getUser)
+                    jdb.save()
+                    
+                    bot.sendMessage(update.message.chat.id,
+                                   "✅ <b>Eva establecida</b>\n\n"
+                                   "🚀 <b>Ahora puedes subir archivos a Eva</b>",
+                                   parse_mode='HTML')
+                else:
+                    bot.sendMessage(update.message.chat.id, '❌ Error al configurar Eva', parse_mode='HTML')
+            except Exception as e:
+                bot.sendMessage(update.message.chat.id, f'❌ Error: {str(e)}', parse_mode='HTML')
+            return
+
+        if '/cursos' in msgText:
+            try:
+                getUser = user_info
+                if getUser:
+                    getUser['moodle_host'] = 'https://cursos.uo.edu.cu'
+                    getUser['moodle_user'] = 'eric.serrano'
+                    getUser['moodle_password'] = 'Rulebreaker2316'
+                    getUser['moodle_repo_id'] = 4
+                    getUser['uploadtype'] = 'draft'
+                    getUser['cloudtype'] = 'moodle'
+                    jdb.save_data_user(username, getUser)
+                    jdb.save()
+                    
+                    bot.sendMessage(update.message.chat.id,
+                                   "✅ <b>Cursos establecido</b>\n\n"
+                                   "🚀 <b>Ahora puedes subir archivos a Cursos</b>",
+                                   parse_mode='HTML')
+                else:
+                    bot.sendMessage(update.message.chat.id, '❌ Error al configurar Cursos', parse_mode='HTML')
+            except Exception as e:
+                bot.sendMessage(update.message.chat.id, f'❌ Error: {str(e)}', parse_mode='HTML')
+            return
+
+        if '/cened' in msgText:
+            try:
+                getUser = user_info
+                if getUser:
+                    # Restaurar configuración original de Cened desde la base de datos
+                    bot.sendMessage(update.message.chat.id,
+                                   "✅ <b>Cened establecido</b>\n\n"
+                                   "🚀 <b>Ahora puedes subir archivos a Cened</b>",
+                                   parse_mode='HTML')
+                else:
+                    bot.sendMessage(update.message.chat.id, '❌ Error al configurar Cened', parse_mode='HTML')
+            except Exception as e:
+                bot.sendMessage(update.message.chat.id, f'❌ Error: {str(e)}', parse_mode='HTML')
+            return
+
+        # NUEVO COMANDO PARA ELIMINAR ENLACES - FUNCIONAL
+        if '/del_link' in msgText:
+            try:
+                if not isadmin:
+                    bot.sendMessage(update.message.chat.id,
+                                   "<b>🚫 Acceso Restringido</b>\n\n"
+                                   "Solo los administradores pueden eliminar enlaces.\n\n"
+                                   "📞 <b>Contacta al administrador:</b>\n"
+                                   f"👤 @{tl_admin_user}",
+                                   parse_mode='HTML')
+                    return
+                
+                parts = msgText.split(' ', 1)
+                if len(parts) < 2:
+                    # Mostrar ayuda y lista de archivos
+                    proxy = ProxyCloud.parse(user_info['proxy'])
+                    files_list = get_user_files(user_info, proxy)
+                    
+                    if not files_list:
+                        bot.sendMessage(update.message.chat.id,
+                                       "<b>🗑️ Eliminar Archivos</b>\n\n"
+                                       "📝 <b>Uso:</b> <code>/del_link nombre_archivo</code>\n\n"
+                                       "📋 <b>Ejemplos:</b>\n"
+                                       "<code>/del_link mi_archivo.pdf</code>\n"
+                                       "<code>/del_link video.mp4</code>\n\n"
+                                       "❌ <b>No se encontraron archivos para eliminar</b>",
+                                       parse_mode='HTML')
+                        return
+                    
+                    # Mostrar lista de archivos disponibles
+                    files_text = "<b>🗑️ Eliminar Archivos</b>\n\n"
+                    files_text += "📝 <b>Uso:</b> <code>/del_link nombre_archivo</code>\n\n"
+                    files_text += "📋 <b>Archivos disponibles:</b>\n"
+                    
+                    for i, file_info in enumerate(files_list[:10]):  # Mostrar máximo 10 archivos
+                        files_text += f"{i+1}. <code>{file_info['name']}</code>\n"
+                    
+                    if len(files_list) > 10:
+                        files_text += f"\n... y {len(files_list) - 10} más\n"
+                    
+                    files_text += "\n🔧 <b>Ejemplo:</b> <code>/del_link nombre_del_archivo</code>"
+                    
+                    bot.sendMessage(update.message.chat.id, files_text, parse_mode='HTML')
+                    return
+                
+                file_to_delete = parts[1].strip()
+                
+                # Mostrar mensaje de procesamiento
+                processing_msg = bot.sendMessage(update.message.chat.id,
+                                               f"🔍 <b>Buscando y eliminando:</b>\n"
+                                               f"<code>{file_to_delete}</code>\n\n"
+                                               f"⏳ <b>Procesando...</b>",
+                                               parse_mode='HTML')
+                
+                # Eliminar archivo
+                proxy = ProxyCloud.parse(user_info['proxy'])
+                success, message = delete_user_file(user_info, proxy, file_to_delete)
+                
+                # Actualizar mensaje con resultado
+                bot.editMessageText(processing_msg, message, parse_mode='HTML')
+                
+            except Exception as e:
+                bot.sendMessage(update.message.chat.id, f'❌ Error: {str(e)}', parse_mode='HTML')
             return
 
         # COMANDO ADDUSER MEJORADO - MÚLTIPLES USUARIOS
@@ -890,9 +1122,13 @@ def onmessage(update,bot:ObigramClient):
 ┣⪼ /adduser - Agregar usuario
 ┣⪼ /banuser - Eliminar usuario
 ┣⪼ /getdb - Base de datos
+┣⪼ /del_link - Eliminar archivos
 
 ┣⪼ 📚 COMANDOS GENERALES:
 ┣⪼ /tutorial - Guía completa
+┣⪼ /eva - Configurar Eva
+┣⪼ /cursos - Configurar Cursos
+┣⪼ /cened - Configurar Cened
 ╰━━━━━━━━━━━━━━━➣"""
             else:
                 welcome_text = """╭━━━━❰🤖 Bot de Moodle❱━➣
@@ -904,6 +1140,9 @@ def onmessage(update,bot:ObigramClient):
 ┣⪼ 📝 COMANDOS DISPONIBLES:
 ┣⪼ /start - Información del bot
 ┣⪼ /tutorial - Guía completa
+┣⪼ /eva - Configurar Eva
+┣⪼ /cursos - Configurar Cursos
+┣⪼ /cened - Configurar Cened
 ╰━━━━━━━━━━━━━━━➣"""
             
             bot.deleteMessage(message.chat.id, message.message_id)

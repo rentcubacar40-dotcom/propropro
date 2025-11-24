@@ -504,16 +504,23 @@ def onmessage(update,bot:ObigramClient):
                            parse_mode='HTML')
             return
 
-        # VERIFICAR SI EL USUARIO TIENE CONFIGURACIÓN COMPLETA
-        if user_info and user_info['moodle_host'] == '' and username != tl_admin_user:
-            bot.sendMessage(update.message.chat.id,
-                           "<b>⏳ Cuenta en espera</b>\n\n"
-                           "Tu cuenta está registrada pero necesita configuración.\n\n"
-                           "📞 <b>Contacta al administrador:</b>\n"
-                           f"👤 @{tl_admin_user}\n\n"
-                           "<i>El administrador configurará tu acceso pronto.</i>",
-                           parse_mode='HTML')
-            return
+        # VERIFICACIÓN MEJORADA DE CONFIGURACIÓN - BLOQUEO PARA USUARIOS SIN CONFIGURAR
+        if user_info and username != tl_admin_user:
+            # Verificar si el usuario tiene configuración completa
+            has_config = (user_info.get('moodle_host', '') != '' and 
+                          user_info.get('moodle_user', '') != '' and 
+                          user_info.get('moodle_password', '') != '')
+            
+            # Permitir solo /start y /tutorial si no tiene configuración
+            if not has_config and msgText not in ['/start', '/tutorial']:
+                bot.sendMessage(update.message.chat.id,
+                               "<b>⏳ Cuenta en espera de configuración</b>\n\n"
+                               "Tu cuenta está registrada pero necesita configuración.\n\n"
+                               "📞 <b>Contacta al administrador:</b>\n"
+                               f"👤 @{tl_admin_user}\n\n"
+                               "<i>Solo puedes usar /start y /tutorial por ahora.</i>",
+                               parse_mode='HTML')
+                return
 
         msgText = ''
         try: 
@@ -636,6 +643,7 @@ def onmessage(update,bot:ObigramClient):
                         if not target_user:
                             continue
                             
+                        # Prevenir auto-configuración del admin
                         if target_user == username:
                             self_config_attempt = True
                             continue
@@ -658,19 +666,16 @@ def onmessage(update,bot:ObigramClient):
                         jdb.save_data_user(target_user, target_user_info)
                         configured_users.append(target_user)
                         
-                        # Notificar al usuario solo si no es el admin
+                        # Mensaje simple de confirmación al usuario configurado
                         if target_user != username:
                             try:
-                                notification_msg = """╭━━━━❰✅❱━➣
-┣⪼ Tu configuración ha sido actualizada
-╰━━━━━━━━━━━━━━━➣"""
-                                bot.sendMessage(update.message.chat.id, notification_msg)
+                                bot.sendMessage(update.message.chat.id, '<b>✅ Usuario configurado</b>', parse_mode='HTML')
                             except Exception as e:
-                                print(f"Error enviando notificación a {target_user}: {e}")
+                                print(f"Error enviando mensaje a {target_user}: {e}")
                     
                     jdb.save()
                     
-                    # Construir mensaje de resultado
+                    # Construir mensaje de resultado para el admin
                     message_parts = []
                     
                     if configured_users:
@@ -714,6 +719,7 @@ def onmessage(update,bot:ObigramClient):
                 bot.sendMessage(update.message.chat.id,'<b>❌ No tiene permisos de administrador</b>', parse_mode='HTML')
             return
 
+        # BLOQUEAR COMANDOS DE ADMIN PARA USUARIOS NORMALES
         if not isadmin and is_text and any(cmd in msgText for cmd in [
             '/zips', '/account', '/host', '/repoid', '/tokenize', 
             '/cloud', '/uptype', '/proxy', '/dir', '/myuser', 
@@ -731,6 +737,7 @@ def onmessage(update,bot:ObigramClient):
                            parse_mode='HTML')
             return
 
+        # MENSAJE PARA TEXTO SIN COMANDOS NI URLS
         if is_text and not msgText.startswith('/') and not 'http' in msgText:
             bot.sendMessage(update.message.chat.id,
                            "<b>🤖 Bot de Subida de Archivos</b>\n\n"
@@ -877,7 +884,7 @@ def onmessage(update,bot:ObigramClient):
                 bot.sendMessage(update.message.chat.id,'<b>📚 Archivo de tutorial no disponible</b>', parse_mode='HTML')
             return
 
-        # comandos de usuario (solo para administrador)
+        # COMANDOS DE USUARIO (SOLO PARA ADMINISTRADOR)
         if '/myuser' in msgText:
             if not isadmin:
                 bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
@@ -1091,23 +1098,48 @@ def onmessage(update,bot:ObigramClient):
 ┣⪼ /moodle_cursos - CURSOS  
 ┣⪼ /moodle_cened - CENED
 
-┣⪼ 📝 COMANDOS ADMIN:
+┣⪼ 👥 GESTIÓN DE USUARIOS:
+┣⪼ /adduser - Agregar usuario(s)
+┣⪼ /adduserconfig - Configurar usuario(s)
+┣⪼ /banuser - Eliminar usuario(s)
+┣⪼ /getdb - Base de datos
+
+┣⪼ ⚡ CONFIGURACIÓN AVANZADA:
 ┣⪼ /myuser - Mi configuración
 ┣⪼ /zips - Tamaño de partes
-┣⪼ /adduser - Agregar usuario
-┣⪼ /adduserconfig - Configurar usuarios
-┣⪼ /banuser - Eliminar usuario
-┣⪼ /getdb - Base de datos
+┣⪼ /account - Cuenta Moodle
+┣⪼ /host - Servidor Moodle
+┣⪼ /repoid - ID Repositorio
+┣⪼ /uptype - Tipo de subida
 
 ┣⪼ 📚 COMANDOS GENERALES:
 ┣⪼ /tutorial - Guía completa
 ╰━━━━━━━━━━━━━━━➣"""
             else:
-                welcome_text = """╭━━━━❰🤖 Bot de Moodle❱━➣
+                # Verificar si el usuario tiene configuración
+                has_config = (user_info.get('moodle_host', '') != '' and 
+                              user_info.get('moodle_user', '') != '' and 
+                              user_info.get('moodle_password', '') != '')
+                
+                if has_config:
+                    welcome_text = """╭━━━━❰🤖 Bot de Moodle❱━➣
 ┣⪼ 🚀 Subidas a Moodle/Cloud
 ┣⪼ 👨‍💻 Desarrollado por: @Eliel_21
 ┣⪼ ⏱️ Enlaces: 8-30 minutos (CENED)
 ┣⪼ 📤 Envía enlaces HTTP/HTTPS
+
+┣⪼ 📝 COMANDOS DISPONIBLES:
+┣⪼ /start - Información del bot
+┣⪼ /tutorial - Guía completa
+╰━━━━━━━━━━━━━━━➣"""
+                else:
+                    welcome_text = """╭━━━━❰🤖 Bot de Moodle❱━➣
+┣⪼ 🚀 Subidas a Moodle/Cloud
+┣⪼ 👨‍💻 Desarrollado por: @Eliel_21
+┣⪼ ⏱️ Enlaces: 8-30 minutos (CENED)
+
+┣⪼ ⏳ Estado: Esperando configuración
+┣⪼ 📞 Contacta al administrador
 
 ┣⪼ 📝 COMANDOS DISPONIBLES:
 ┣⪼ /start - Información del bot
@@ -1199,6 +1231,22 @@ def onmessage(update,bot:ObigramClient):
             else:
                 bot.editMessageText(message,'<b>❌ Error de conexión</b>\n• Verifique su cuenta\n• Servidor: '+client.path, parse_mode='HTML')       
         elif 'http' in msgText:
+            # VERIFICAR SI EL USUARIO TIENE CONFIGURACIÓN PARA SUBIR ARCHIVOS
+            if user_info and username != tl_admin_user:
+                has_config = (user_info.get('moodle_host', '') != '' and 
+                              user_info.get('moodle_user', '') != '' and 
+                              user_info.get('moodle_password', '') != '')
+                
+                if not has_config:
+                    bot.sendMessage(update.message.chat.id,
+                                   "<b>⏳ Cuenta en espera de configuración</b>\n\n"
+                                   "Tu cuenta está registrada pero necesita configuración.\n\n"
+                                   "📞 <b>Contacta al administrador:</b>\n"
+                                   f"👤 @{tl_admin_user}\n\n"
+                                   "<i>Solo puedes usar /start y /tutorial por ahora.</i>",
+                                   parse_mode='HTML')
+                    return
+            
             url = msgText
             ddl(update,bot,message,url,file_name='',thread=thread,jdb=jdb)
         else:

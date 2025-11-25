@@ -219,12 +219,11 @@ def processUploadFiles(filename,filesize,files,update,bot,message,thread=None,jd
                                                              progressfunc=uploadFile,
                                                              args=(bot,message,filename,thread,part_info),
                                                              tokenize=tokenize)
-                        draftlist.append(resp)
-                    if user_info['uploadtype'] == 'calendario':
-                        fileid,resp = client.upload_file_calendar(f,
-                                                                 progressfunc=uploadFile,
-                                                                 args=(bot,message,filename,thread,part_info),
-                                                                 tokenize=tokenize)
+                        if user_info['uploadtype'] == 'calendario':
+                            fileid,resp = client.upload_file_calendar_direct(f,
+                                                             progressfunc=uploadFile,
+                                                             args=(bot,message,filename,thread,part_info),
+                                                             tokenize=tokenize)
                         draftlist.append(resp)
                     iter += 1
                     if iter>=10:

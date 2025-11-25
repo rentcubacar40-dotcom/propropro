@@ -309,8 +309,10 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
         # Obtener el nombre base del archivo original
         original_filename = file.split('/')[-1] if '/' in file else file
         base_name = original_filename.split('.')[0]
+        file_extension = original_filename.split('.')[-1].lower() if '.' in original_filename else ''
+        is_compressed_file = file_extension in ['zip', 'rar', '7z', 'tar', 'gz']
             
-        if file_size > max_file_size:
+        if file_size > max_file_size and not is_compressed_file:
             compresingInfo = infos.createCompresing(file,file_size,max_file_size)
             bot.editMessageText(message,compresingInfo)
             zipname = base_name + createID()
@@ -326,8 +328,16 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
                 os.unlink(file)
             except:pass
             file_upload_count = len(mult_file.files)
+            
+            # LIMPIAR ARCHIVOS TEMPORALES ZIP
+            try:
+                for zip_file in mult_file.files:
+                    if os.path.exists(zip_file):
+                        os.unlink(zip_file)
+            except:pass
+                        
         else:
-            # Para archivos pequeños, usar el nombre original
+            # Para archivos pequeños o ya comprimidos, usar el nombre original
             client = processUploadFiles(original_filename,file_size,[file],update,bot,message,thread=thread,jdb=jdb)
             file_upload_count = 1
             

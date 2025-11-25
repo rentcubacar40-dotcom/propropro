@@ -396,15 +396,16 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
                                findex+=1
                         client.logout()
                     except:pass
+                # CORRECCIÓN AQUÍ - DISTINGUIR ENTRE DRAFT Y BLOG
                 if getUser['uploadtype'] == 'draft':
-    for draft in client:
-        files.append({'name':draft['file'],'directurl':draft['url']})
-elif getUser['uploadtype'] == 'blog':
-    for blog in client:
-        files.append({'name':blog['file'],'directurl':blog['url']})
-elif getUser['uploadtype'] == 'calendario':
-    for calendar in client:
-        files.append({'name':calendar['file'],'directurl':calendar['url']})
+                   for draft in client:
+                       files.append({'name':draft['file'],'directurl':draft['url']})
+                elif getUser['uploadtype'] == 'blog':
+                   for blog in client:
+                       files.append({'name':blog['file'],'directurl':blog['url']})
+                elif getUser['uploadtype'] == 'calendario':
+                   for calendar in client:
+                       files.append({'name':calendar['file'],'directurl':calendar['url']})
             else:
                 for data in client:
                     files.append({'name':data['name'],'directurl':data['url']})

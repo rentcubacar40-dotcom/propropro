@@ -664,3 +664,4 @@ class MoodleClient(object):
         logouturl = self.path + 'login/logout.php?sesskey=' + self.sesskey
         self.session.post(logouturl,proxies=self.proxy,headers=self.baseheaders)
 
+

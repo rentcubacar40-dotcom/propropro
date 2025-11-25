@@ -315,68 +315,95 @@ class MoodleClient(object):
         except:
             return None,None
 
-    def upload_file_blog(self,file,blog=None,itemid=None,progressfunc=None,args=(),tokenize=False):
-        try:
-            fileurl = self.path + 'blog/edit.php?action=add&userid=' + self.userid
-            resp = self.session.get(fileurl,proxies=self.proxy,headers=self.baseheaders)
-            soup = BeautifulSoup(resp.text,'html.parser')
-            sesskey = self.sesskey
-            if self.sesskey=='':
-                sesskey  =  soup.find('input',attrs={'name':'sesskey'})['value']
-            _qf__user_files_form = 1
-            query = self.extractQuery(soup.find('object',attrs={'type':'text/html'})['data'])
-            client_id = self.getclientid(resp.text)
+    def upload_file_blog(self, file, blog=None, itemid=None, progressfunc=None, args=(), tokenize=False):
+    try:
+        fileurl = self.path + 'blog/edit.php?action=add&userid=' + self.userid
+        resp = self.session.get(fileurl, proxies=self.proxy, headers=self.baseheaders)
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        sesskey = self.sesskey
+        if self.sesskey == '':
+            sesskey = soup.find('input', attrs={'name': 'sesskey'})['value']
         
-            itempostid = query['itemid']
-            if itemid:
-                itempostid = itemid
+        query = self.extractQuery(soup.find('object', attrs={'type': 'text/html'})['data'])
+        client_id = self.getclientid(resp.text)
+        
+        itempostid = query['itemid']
+        if itemid:
+            itempostid = itemid
 
-            of = open(file,'rb')
-            b = uuid.uuid4().hex
-            try:
-                areamaxbyttes = query['areamaxbytes']
-                if areamaxbyttes=='0':
-                    areamaxbyttes = '-1'
-            except:
+        of = open(file, 'rb')
+        b = uuid.uuid4().hex
+        try:
+            areamaxbyttes = query['areamaxbytes']
+            if areamaxbyttes == '0':
                 areamaxbyttes = '-1'
-            upload_data = {
-                'title':(None,''),
-                'author':(None,'ObysoftDev'),
-                'license':(None,'allrightsreserved'),
-                'itemid':(None,itempostid),
-                'repo_id':(None,str(self.repo_id)),
-                'p':(None,''),
-                'page':(None,''),
-                'env':(None,query['env']),
-                'sesskey':(None,sesskey),
-                'client_id':(None,client_id),
-                'maxbytes':(None,query['maxbytes']),
-                'areamaxbytes':(None,areamaxbyttes),
-                'ctx_id':(None,query['ctx_id']),
-                'savepath':(None,'/')}
-            upload_file = {
-                'repo_upload_file':(file,of,'application/octet-stream'),
-                **upload_data
-                }
-            post_file_url = self.path+'repository/repository_ajax.php?action=upload'
-            encoder = rt.MultipartEncoder(upload_file,boundary=b)
-            progrescall = CallingUpload(progressfunc,file,args)
-            callback = partial(progrescall)
-            monitor = MultipartEncoderMonitor(encoder,callback=callback)
-            resp2 = self.session.post(post_file_url,data=monitor,headers={"Content-Type": "multipart/form-data; boundary="+b,**self.baseheaders},proxies=self.proxy)
-            of.close()
-
-            data = self.parsejson(resp2.text)
-            data['url'] = str(data['url']).replace('\\','')
-            data['normalurl'] = data['url']
-            if self.userdata:
-                if 'token' in self.userdata and not tokenize:
-                    data['url'] = str(data['url']).replace('pluginfile.php/','webservice/pluginfile.php/') + '?token=' + self.userdata['token']
-                if tokenize:
-                    data['url'] = self.host_tokenize + S5Crypto.encrypt(data['url']) + '/' + self.userdata['s5token']
-            return itempostid,data
         except:
-            return None,None
+            areamaxbyttes = '-1'
+        
+        upload_data = {
+            'title': (None, ''),
+            'author': (None, 'ObysoftDev'),
+            'license': (None, 'allrightsreserved'),
+            'itemid': (None, itempostid),
+            'repo_id': (None, str(self.repo_id)),
+            'p': (None, ''),
+            'page': (None, ''),
+            'env': (None, query['env']),
+            'sesskey': (None, sesskey),
+            'client_id': (None, client_id),
+            'maxbytes': (None, query['maxbytes']),
+            'areamaxbytes': (None, areamaxbyttes),
+            'ctx_id': (None, query['ctx_id']),
+            'savepath': (None, '/')
+        }
+        upload_file = {
+            'repo_upload_file': (file, of, 'application/octet-stream'),
+            **upload_data
+        }
+        
+        post_file_url = self.path + 'repository/repository_ajax.php?action=upload'
+        encoder = rt.MultipartEncoder(upload_file, boundary=b)
+        progrescall = CallingUpload(progressfunc, file, args)
+        callback = partial(progrescall)
+        monitor = MultipartEncoderMonitor(encoder, callback=callback)
+        resp2 = self.session.post(post_file_url, data=monitor, 
+                                 headers={"Content-Type": "multipart/form-data; boundary=" + b, **self.baseheaders}, 
+                                 proxies=self.proxy)
+        of.close()
+
+        data = self.parsejson(resp2.text)
+        data['url'] = str(data['url']).replace('\\', '')
+        data['normalurl'] = data['url']
+        
+        # CORRECCIÓN CLAVE: Crear el enlace específico para BLOG
+        if self.userdata and 'token' in self.userdata:
+            if not tokenize:
+                # Para blog, la estructura es: /blog/attachment/[itemid]/[filename]
+                filename = data['file']
+                # Extraer el contextid del query
+                ctx_id = query['ctx_id']
+                
+                # Crear enlace específico para blog
+                blog_url = f"{self.path}webservice/pluginfile.php/{ctx_id}/blog/attachment/{itempostid}/{urllib.parse.quote(filename)}?token={self.userdata['token']}"
+                data['url'] = blog_url
+            else:
+                # Si es tokenize, usar la estructura normal pero marcar como blog
+                data['url'] = self.host_tokenize + S5Crypto.encrypt(data['url']) + '/' + self.userdata['s5token']
+                data['type'] = 'blog'
+        
+        # Crear entrada de blog después de subir el archivo
+        try:
+            blog_entry = self.createBlog(data['file'], itempostid)
+            if blog_entry and blog_entry.status_code == 200:
+                data['blog_created'] = True
+        except Exception as e:
+            print(f"Error creando entrada de blog: {e}")
+            data['blog_created'] = False
+        
+        return itempostid, data
+    except Exception as e:
+        print(f"Error en upload_file_blog: {e}")
+        return None, None
 
     def upload_file_perfil(self,file,progressfunc=None,args=(),tokenize=False):
             file_edit = f'{self.path}user/edit.php?id={self.userid}&returnto=profile'
@@ -636,3 +663,4 @@ class MoodleClient(object):
     def logout(self):
         logouturl = self.path + 'login/logout.php?sesskey=' + self.sesskey
         self.session.post(logouturl,proxies=self.proxy,headers=self.baseheaders)
+

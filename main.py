@@ -315,15 +315,34 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
         if file_size > max_file_size and not is_compressed_file:
             compresingInfo = infos.createCompresing(file,file_size,max_file_size)
             bot.editMessageText(message,compresingInfo)
+            
+            # CREAR ARCHIVO TEMPORAL CON NOMBRE CORRECTO
+            temp_dir = "temp_" + createID()
+            os.makedirs(temp_dir, exist_ok=True)
+            
+            # Copiar el archivo a un directorio temporal con su nombre original
+            temp_file_path = os.path.join(temp_dir, original_filename)
+            import shutil
+            shutil.copy2(file, temp_file_path)
+            
             zipname = base_name + createID()
-            mult_file = zipfile.MultiFile(zipname,max_file_size)
-            zip = zipfile.ZipFile(mult_file,  mode='w', compression=zipfile.ZIP_DEFLATED)
-            zip.write(file)
-            zip.close()
+            mult_file = zipfile.MultiFile(zipname, max_file_size)
+            
+            # CREAR ZIP CON EL ARCHIVO Y SU NOMBRE ORIGINAL
+            with zipfile.ZipFile(mult_file, mode='w', compression=zipfile.ZIP_DEFLATED) as zipf:
+                # Agregar el archivo con su nombre original preservado
+                zipf.write(temp_file_path, arcname=original_filename)
+            
             mult_file.close()
             
-            # Usar el nombre base original para la subida, no el archivo temporal
-            client = processUploadFiles(original_filename,file_size,mult_file.files,update,bot,message,thread=thread,jdb=jdb)
+            # LIMPIAR ARCHIVO TEMPORAL
+            try:
+                shutil.rmtree(temp_dir)
+            except: pass
+            
+            # Usar el nombre base original para la subida
+            client = processUploadFiles(original_filename, file_size, mult_file.files, update, bot, message, thread=thread, jdb=jdb)
+            
             try:
                 os.unlink(file)
             except:pass
@@ -344,7 +363,7 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
         if thread and thread.getStore('stop'):
             return
             
-        # ACTUALIZAR ESTADÍSTICAS DE USO
+        # ACTUALIZAR ESTADÍSTICAS DE USUO
         try:
             file_size_mb = file_size / (1024 * 1024)
             current_total = getUser.get('total_mb_used', 0)

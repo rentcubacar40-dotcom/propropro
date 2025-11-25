@@ -596,8 +596,8 @@ class MoodleClient(object):
     # 🆕 NUEVO MÉTODO MÁS ROBUSTO PARA CALENDARIO
     def upload_file_calendar_direct(self, file, progressfunc=None, args=(), tokenize=False):
     """Sube archivos directamente al calendario usando API - MÁS ROBUSTO"""
-    try:
-        print("🔧 [DEBUG] Iniciando upload_file_calendar_direct...")
+        try:
+            print("🔧 [DEBUG] Iniciando upload_file_calendar_direct...")
         
         # 1. PRIMERO subir el archivo a drafts - IMPORTANTE: tokenize=False
         print("🔧 [DEBUG] Subiendo a draft...")
@@ -648,6 +648,7 @@ class MoodleClient(object):
 
     def create_calendar_event_with_file(self, file_url, filename):
         """Crea un evento en el calendario con enlace al archivo"""
+      
         try:
             print(f"📅 Creando evento para: {filename}")
             
@@ -788,4 +789,5 @@ class MoodleClient(object):
     def logout(self):
         logouturl = self.path + 'login/logout.php?sesskey=' + self.sesskey
         self.session.post(logouturl, proxies=self.proxy, headers=self.baseheaders)
+
 

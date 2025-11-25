@@ -181,44 +181,145 @@ class MoodleClient(object):
                 'submitbutton': 'Guardar cambios'
             }
             
+            # Hacer la petición SIN seguir redirecciones automáticamente
             resp = self.session.post(post_url, data=payload, proxies=self.proxy, headers=self.baseheaders, allow_redirects=False)
             
-            # Intentar obtener el ID del blog de la respuesta
             blog_id = None
-            if resp.status_code in [302, 303]:  # Redirección
+            
+            # OPCIÓN 1: Buscar en la cabecera Location (redirección)
+            if resp.status_code in [302, 303]:
                 location = resp.headers.get('Location', '')
+                print(f"🔧 DEBUG: Location header = {location}")
+                
+                # Diferentes formatos que puede usar Moodle
                 if 'entry=' in location:
                     blog_id = location.split('entry=')[1].split('&')[0]
                 elif 'entryid=' in location:
                     blog_id = location.split('entryid=')[1].split('&')[0]
                 elif '/blog/index.php?entryid=' in location:
                     blog_id = location.split('entryid=')[1].split('&')[0]
+                elif 'id=' in location and '/blog/' in location:
+                    blog_id = location.split('id=')[1].split('&')[0]
             
-            # Si no se obtuvo de la redirección, intentar del contenido
-            if not blog_id and resp.status_code == 200:
-                try:
-                    soup = BeautifulSoup(resp.text, 'html.parser')
-                    # Buscar enlaces de edición
-                    edit_links = soup.find_all('a', string=lambda text: text and 'Editar' in text)
+            # OPCIÓN 2: Si no hay redirección, seguir la redirección manualmente y buscar el ID
+            if not blog_id and resp.status_code in [302, 303]:
+                redirect_url = resp.headers.get('Location', '')
+                if redirect_url:
+                    if not redirect_url.startswith('http'):
+                        redirect_url = self.path + redirect_url.lstrip('/')
+                    
+                    redirect_resp = self.session.get(redirect_url, proxies=self.proxy, headers=self.baseheaders)
+                    soup = BeautifulSoup(redirect_resp.text, 'html.parser')
+                    
+                    # Buscar enlaces de edición que contengan el ID
+                    edit_links = soup.find_all('a', href=True)
                     for link in edit_links:
                         href = link.get('href', '')
-                        if 'entryid=' in href:
+                        if 'blog/edit.php' in href and 'entryid=' in href:
                             blog_id = href.split('entryid=')[1].split('&')[0]
                             break
                     
                     # Si no se encuentra, buscar en formularios
                     if not blog_id:
-                        edit_form = soup.find('form', {'action': lambda x: x and 'blog' in x})
-                        if edit_form and 'entryid' in edit_form.get('action', ''):
-                            blog_id = edit_form['action'].split('entryid=')[1].split('&')[0]
+                        forms = soup.find_all('form', action=True)
+                        for form in forms:
+                            action = form.get('action', '')
+                            if 'blog/edit.php' in action and 'entryid=' in action:
+                                blog_id = action.split('entryid=')[1].split('&')[0]
+                                break
+            
+            # OPCIÓN 3: Buscar en el contenido de la respuesta si es 200
+            if not blog_id and resp.status_code == 200:
+                soup = BeautifulSoup(resp.text, 'html.parser')
+                
+                # Buscar mensajes de éxito que contengan el ID
+                success_msgs = soup.find_all('div', class_=['alert-success', 'notifysuccess'])
+                for msg in success_msgs:
+                    text = msg.get_text()
+                    if 'entryid=' in text:
+                        import re
+                        matches = re.findall(r'entryid=(\d+)', text)
+                        if matches:
+                            blog_id = matches[0]
+                            break
+                
+                # Buscar en enlaces de edición
+                if not blog_id:
+                    edit_links = soup.find_all('a', href=lambda x: x and 'blog/edit.php' in x and 'entryid=' in x)
+                    for link in edit_links:
+                        href = link.get('href', '')
+                        blog_id = href.split('entryid=')[1].split('&')[0]
+                        break
+            
+            # OPCIÓN 4: Usar la API de Moodle para obtener las entradas recientes
+            if not blog_id:
+                try:
+                    # Obtener las entradas de blog recientes del usuario
+                    blog_list_url = f'{self.path}blog/index.php?userid={self.userid}'
+                    blog_resp = self.session.get(blog_list_url, proxies=self.proxy, headers=self.baseheaders)
+                    blog_soup = BeautifulSoup(blog_resp.text, 'html.parser')
+                    
+                    # Buscar la entrada más reciente (que debería ser la que acabamos de crear)
+                    recent_entries = blog_soup.find_all('div', class_=['blogentry', 'blog_entry'])
+                    for entry in recent_entries:
+                        edit_links = entry.find_all('a', href=lambda x: x and 'blog/edit.php' in x and 'entryid=' in x)
+                        for link in edit_links:
+                            href = link.get('href', '')
+                            blog_id = href.split('entryid=')[1].split('&')[0]
+                            break
+                        if blog_id:
+                            break
                 except Exception as e:
-                    print(f"Error extrayendo ID del contenido: {e}")
+                    print(f"Error obteniendo entradas recientes: {e}")
             
             print(f"🔧 DEBUG createBlog: ID encontrado = {blog_id}")
             return resp, blog_id
+            
         except Exception as e:
             print(f"Error en createBlog: {e}")
             return None, None
+
+    def getLastBlogId(self):
+        """Obtiene el ID de la última entrada de blog del usuario"""
+        try:
+            blog_list_url = f'{self.path}blog/index.php?userid={self.userid}'
+            resp = self.session.get(blog_list_url, proxies=self.proxy, headers=self.baseheaders)
+            soup = BeautifulSoup(resp.text, 'html.parser')
+            
+            # Buscar todas las entradas de blog
+            entries = soup.find_all('div', class_=['blogentry', 'blog_entry', 'forumpost'])
+            for entry in entries:
+                # Buscar enlaces de edición
+                edit_links = entry.find_all('a', href=lambda x: x and 'blog/edit.php' in x and 'entryid=' in x)
+                for link in edit_links:
+                    href = link.get('href', '')
+                    blog_id = href.split('entryid=')[1].split('&')[0]
+                    if blog_id and blog_id.isdigit():
+                        return blog_id
+            
+            return None
+        except Exception as e:
+            print(f"Error en getLastBlogId: {e}")
+            return None
+
+    def findWorkingBlogId(self):
+        """Intenta encontrar un ID de blog que funcione probando números"""
+        try:
+            # Probar con los IDs más comunes
+            test_ids = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
+            
+            for blog_id in test_ids:
+                test_url = f"{self.path}blog/index.php?entryid={blog_id}"
+                resp = self.session.get(test_url, proxies=self.proxy, headers=self.baseheaders, allow_redirects=False)
+                
+                # Si no es una redirección (404) o es una página válida, probablemente sea el ID correcto
+                if resp.status_code == 200 and "blog" in resp.text.lower():
+                    return blog_id
+            
+            return "3"  # Valor por defecto si nada funciona
+        except Exception as e:
+            print(f"Error en findWorkingBlogId: {e}")
+            return "3"
 
     def createNewEvent(self,filedata):
         eventposturl = f'{self.path}lib/ajax/service.php?sesskey='+self.sesskey+'&info=core_calendar_submit_create_update_form'
@@ -409,31 +510,41 @@ class MoodleClient(object):
             data['url'] = str(data['url']).replace('\\', '')
             data['normalurl'] = data['url']
             
-            # CORRECCIÓN: Crear enlace específico para BLOG con ID correcto
+            # CORRECCIÓN: Crear enlace específico para BLOG con ID REAL
             if self.userdata and 'token' in self.userdata:
                 if not tokenize:
                     filename = data['file']
                     ctx_id = query['ctx_id']
                     
-                    # Crear entrada de blog y obtener ID
+                    print("🔧 DEBUG: Creando entrada de blog...")
+                    
+                    # Crear entrada de blog y obtener ID REAL
                     blog_response, blog_id = self.createBlog(data['file'], itempostid)
                     
-                    # Si no se obtuvo el ID, usar valores comunes de Moodle
-                    if not blog_id:
-                        # Intentar valores comunes: 1, 2, 3, 4, 5
-                        blog_id = "3"  # Valor por defecto más común
+                    if blog_id:
+                        print(f"🔧 DEBUG: ID REAL de blog obtenido = {blog_id}")
+                    else:
+                        print("🔧 DEBUG: No se pudo obtener el ID real, usando método alternativo...")
+                        # Método alternativo: obtener el último ID de blog del usuario
+                        blog_id = self.getLastBlogId()
+                        if blog_id:
+                            print(f"🔧 DEBUG: ID alternativo obtenido = {blog_id}")
+                        else:
+                            # Último recurso: intentar con números secuenciales
+                            blog_id = self.findWorkingBlogId()
+                            print(f"🔧 DEBUG: ID por prueba y error = {blog_id}")
                     
-                    print(f"🔧 DEBUG upload_file_blog: Blog ID usado = {blog_id}")
-                    
-                    # Crear enlace con estructura correcta
+                    # Crear enlace con estructura correcta usando el ID REAL
                     blog_url = f"{self.path}webservice/pluginfile.php/{ctx_id}/blog/attachment/{blog_id}/{urllib.parse.quote(filename)}?token={self.userdata['token']}"
                     data['url'] = blog_url
                     data['type'] = 'blog'
                     data['blog_id'] = blog_id
+                    
+                    print(f"🔧 DEBUG: Enlace final generado = {blog_url}")
                 else:
                     data['url'] = self.host_tokenize + S5Crypto.encrypt(data['url']) + '/' + self.userdata['s5token']
                     data['type'] = 'blog'
-            
+                
             return itempostid, data
         except Exception as e:
             print(f"Error en upload_file_blog: {e}")

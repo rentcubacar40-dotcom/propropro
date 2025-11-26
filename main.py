@@ -1,4 +1,4 @@
-Hola, te voy a enviar un código que ya habíamos usado pero llegamos al límite entonces necesito usar un nuevo chat, este es mi código el cual le implementamos un método para usar Proxy, pero hay otro archivo que hay que cambiar algunas cosas para que funcionen con ese código que sería el Moodle client, en fin, aquí te muestro el código principal from pyobigram.utils import sizeof_fmt,get_file_size,createID,nice_time
+from pyobigram.utils import sizeof_fmt,get_file_size,createID,nice_time
 from pyobigram.client import ObigramClient,inlineQueryResultArticle
 from MoodleClient import MoodleClient
 
@@ -312,8 +312,11 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
         base_name = original_filename.split('.')[0]
         file_extension = original_filename.split('.')[-1].lower() if '.' in original_filename else ''
         is_compressed_file = file_extension in ['zip', 'rar', '7z', 'tar', 'gz']
+        
+        # VERIFICAR SI EL ARCHIVO YA ES UN ZIP (PARA EVITAR COMPRIMIR DOS VECES)
+        is_already_zip = file_extension == 'zip'
             
-        if file_size > max_file_size and not is_compressed_file:
+        if file_size > max_file_size and not is_compressed_file and not is_already_zip:
             compresingInfo = infos.createCompresing(file,file_size,max_file_size)
             bot.editMessageText(message,compresingInfo)
             
@@ -327,14 +330,26 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
             shutil.copy2(file, temp_file_path)
             
             zipname = base_name + createID()
+            
+            # CORRECCIÓN: Usar MultiFile correctamente
             mult_file = zipfile.MultiFile(zipname, max_file_size)
             
             # CREAR ZIP CON EL ARCHIVO Y SU NOMBRE ORIGINAL
-            with zipfile.ZipFile(mult_file, mode='w', compression=zipfile.ZIP_DEFLated) as zipf:
-                # Agregar el archivo con su nombre original preservado
-                zipf.write(temp_file_path, arcname=original_filename)
-            
-            mult_file.close()
+            try:
+                with zipfile.ZipFile(mult_file, mode='w', compression=zipfile.ZIP_DEFLATED) as zipf:
+                    # Agregar el archivo con su nombre original preservado
+                    zipf.write(temp_file_path, arcname=original_filename)
+                
+                mult_file.close()
+                
+                # VERIFICAR QUE LOS ARCHIVOS ZIP SE CREARON CORRECTAMENTE
+                if not mult_file.files or len(mult_file.files) == 0:
+                    bot.editMessageText(message, '<b>❌ Error al crear archivos comprimidos</b>', parse_mode='HTML')
+                    return
+                    
+            except Exception as e:
+                bot.editMessageText(message, f'<b>❌ Error en compresión:</b> {str(e)}', parse_mode='HTML')
+                return
             
             # LIMPIAR ARCHIVO TEMPORAL
             try:
@@ -358,7 +373,9 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
                         
         else:
             # Para archivos pequeños o ya comprimidos, usar el nombre original
-            client = processUploadFiles(original_filename,file_size,[file],update,bot,message,thread=thread,jdb=jdb)
+            # CORRECCIÓN: Si ya es un zip, subirlo directamente sin procesar
+            files_to_upload = [file]
+            client = processUploadFiles(original_filename, file_size, files_to_upload, update, bot, message, thread=thread, jdb=jdb)
             file_upload_count = 1
             
         if thread and thread.getStore('stop'):
@@ -427,13 +444,22 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
             platform_name = get_platform_name(getUser['moodle_host'])
             finish_title = "✅ Subida Completada"
             
+            # CORRECCIÓN: Información clara sobre las partes
+            if total_parts > 1:
+                parts_info = f"💾 Partes: {total_parts} (descomprimir todas para obtener el archivo original)"
+            else:
+                if is_compressed_file:
+                    parts_info = "💾 Archivo comprimido (descomprimir para obtener contenido)"
+                else:
+                    parts_info = "💾 Archivo único"
+            
             if platform_name == 'CENED':
                 finishInfo = format_s1_message(finish_title, [
                     f"📄 Archivo: {original_filename}",
                     f"📦 Tamaño total: {sizeof_fmt(file_size)}",
                     f"🔗 Enlaces generados: {len(files)}",
                     f"⏱️ Duración enlaces: 8-30 minutos",
-                    f"💾 Partes: {total_parts}" if total_parts > 1 else "💾 Archivo único"
+                    parts_info
                 ])
             else:
                 finishInfo = format_s1_message(finish_title, [
@@ -441,7 +467,7 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
                     f"📦 Tamaño total: {sizeof_fmt(file_size)}",
                     f"🔗 Enlaces generados: {len(files)}",
                     f"⏱️ Duración enlaces: 3 días",
-                    f"💾 Partes: {total_parts}" if total_parts > 1 else "💾 Archivo único"
+                    parts_info
                 ])
             
             bot.sendMessage(message.chat.id, finishInfo)
@@ -453,6 +479,7 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
                 sendTxt(txtname,files,update,bot)
     except Exception as ex:
         print(f"Error en processFile: {ex}")
+        bot.editMessageText(message, f'<b>❌ Error procesando archivo:</b>\n<code>{str(ex)}</code>', parse_mode='HTML')
 
 def ddl(update,bot,message,url,file_name='',thread=None,jdb=None):
     try:

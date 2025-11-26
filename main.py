@@ -166,7 +166,7 @@ def processUploadFiles(filename,filesize,files,update,bot,message,thread=None,jd
                                   user_info['moodle_host'],
                                   user_info['moodle_repo_id'],
                                   proxy=proxy)
-            loged = client.login()
+            loged = client.cuba_connect()
             itererr = 0
             if not loged:
                 bot.editMessageText(message,'<b>❌ Error en la plataforma</b>', parse_mode='HTML')

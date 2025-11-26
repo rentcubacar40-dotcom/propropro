@@ -25,6 +25,7 @@ import threading
 import random
 import aiohttp
 import asyncio
+import re
 
 def create_progress_bar(percentage, bars=15):
     """Crea barra de progreso estilo S1 con ⬢⬡"""
@@ -334,9 +335,28 @@ def should_compress_file(platform_settings, file_size, file_extension):
     max_size_bytes = platform_settings['max_size_mb'] * 1024 * 1024
     return file_size > max_size_bytes
 
+def clean_proxy_text(proxy_text):
+    """Limpia el texto del proxy eliminando formatos HTML y caracteres especiales"""
+    if not proxy_text:
+        return ""
+    
+    # Eliminar etiquetas HTML
+    clean_text = re.sub(r'<[^>]+>', '', proxy_text)
+    
+    # Eliminar caracteres especiales que no pertenecen a una URL de proxy
+    clean_text = re.sub(r'[^\w:/.-]', '', clean_text)
+    
+    # Asegurarse de que tenga el formato correcto
+    if clean_text and not any(proto in clean_text for proto in ['http://', 'https://', 'socks4://', 'socks5://']):
+        # Si no tiene protocolo, asumir http://
+        if '://' not in clean_text:
+            clean_text = 'http://' + clean_text
+    
+    return clean_text.strip()
+
 async def test_proxy_connection(user_info):
     """
-    Test REAL de conexión del proxy con medición de velocidad
+    Test REAL de conexión del proxy con medición de velocidad MEJORADA
     """
     results = {
         'success': False,
@@ -349,6 +369,7 @@ async def test_proxy_connection(user_info):
     
     try:
         proxy_url = user_info.get('proxy', '')
+        proxy_url = clean_proxy_text(proxy_url)
         
         # Si no hay proxy, probar conexión directa
         if not proxy_url:
@@ -376,23 +397,31 @@ async def test_proxy_connection(user_info):
             # TEST 2: Conexión a Moodle
             results['moodle_status'] = await test_moodle_with_proxy(user_info, proxy_config)
             
-            # TEST 3: Velocidad de descarga (sample)
+            # TEST 3: Velocidad de descarga MEJORADA
             if results['success']:
                 try:
+                    # Usar un archivo de prueba más confiable
+                    test_url = 'http://speedtest.ftp.otenet.gr/files/test1Mb.db'
                     start_time = time.time()
-                    async with session.get('http://ipv4.download.thinking.com/1MB.zip', 
+                    
+                    async with session.get(test_url, 
                                          proxy=proxy_config['url'] if proxy_config else None,
                                          ssl=False) as response:
-                        downloaded = 0
+                        total_downloaded = 0
                         async for chunk in response.content.iter_chunked(8192):
-                            downloaded += len(chunk)
-                            if time.time() - start_time > 5:  # Max 5 segundos
+                            total_downloaded += len(chunk)
+                            # Descargar por máximo 10 segundos para mejor medición
+                            if time.time() - start_time >= 10:
                                 break
                         
                         download_time = time.time() - start_time
                         if download_time > 0:
-                            results['download_speed'] = round((downloaded / download_time) / 1024, 2)  # KB/s
-                except:
+                            # Convertir a KB/s y MB/s
+                            speed_kbs = (total_downloaded / download_time) / 1024
+                            results['download_speed'] = round(speed_kbs, 2)
+                            
+                except Exception as e:
+                    print(f"Error en test de velocidad: {e}")
                     results['download_speed'] = 0
             
         return results
@@ -464,8 +493,16 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
         )
             
         if should_compress:
-            compresingInfo = infos.createCompresing(file,file_size,max_file_size)
-            bot.editMessageText(message,compresingInfo)
+            # ✅ CORRECCIÓN: ACTUALIZAR MENSAJE DE COMPRESIÓN EN TIEMPO REAL
+            total_parts = (file_size + max_file_size - 1) // max_file_size  # Cálculo correcto de partes
+            compresingInfo = format_s1_message("📚 Comprimiendo", [
+                f"🔖 Nombre: {original_filename}",
+                f"🗂 Tamaño Total: {sizeof_fmt(file_size)}",
+                f"📂 Tamaño Partes: {sizeof_fmt(max_file_size)}",
+                f"💾 Cantidad Partes: {total_parts}",
+                f"⏳ Procesando..."
+            ])
+            bot.editMessageText(message, compresingInfo)
             
             # CREAR ARCHIVO TEMPORAL CON NOMBRE CORRECTO
             temp_dir = "temp_" + createID()
@@ -478,11 +515,11 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
             
             zipname = base_name + createID()
             
-            # CORRECCIÓN: Usar MultiFile correctamente
-            mult_file = zipfile.MultiFile(zipname, user_zips)  # ✅ Usar user_zips directamente
-            
-            # CREAR ZIP CON EL ARCHIVO Y SU NOMBRE ORIGINAL
             try:
+                # ✅ CORRECCIÓN: USAR MultiFile CORRECTAMENTE
+                mult_file = zipfile.MultiFile(zipname, user_zips)
+                
+                # CREAR ZIP CON EL ARCHIVO Y SU NOMBRE ORIGINAL
                 with zipfile.ZipFile(mult_file, mode='w', compression=zipfile.ZIP_DEFLATED) as zipf:
                     # Agregar el archivo con su nombre original preservado
                     zipf.write(temp_file_path, arcname=original_filename)
@@ -492,10 +529,29 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
                 # VERIFICAR QUE LOS ARCHIVOS ZIP SE CREARON CORRECTAMENTE
                 if not mult_file.files or len(mult_file.files) == 0:
                     bot.editMessageText(message, '<b>❌ Error al crear archivos comprimidos</b>', parse_mode='HTML')
+                    # Limpiar archivos temporales
+                    try:
+                        shutil.rmtree(temp_dir)
+                    except: pass
                     return
                     
+                # ✅ ACTUALIZAR MENSAJE CON PARTES REALES CREADAS
+                actual_parts = len(mult_file.files)
+                compresingInfo = format_s1_message("✅ Compresión Completada", [
+                    f"🔖 Nombre: {original_filename}",
+                    f"🗂 Tamaño Total: {sizeof_fmt(file_size)}",
+                    f"📂 Tamaño Partes: {sizeof_fmt(max_file_size)}",
+                    f"💾 Partes Creadas: {actual_parts}",
+                    f"🚀 Iniciando subida..."
+                ])
+                bot.editMessageText(message, compresingInfo)
+                
             except Exception as e:
                 bot.editMessageText(message, f'<b>❌ Error en compresión:</b> {str(e)}', parse_mode='HTML')
+                # Limpiar archivos temporales
+                try:
+                    shutil.rmtree(temp_dir)
+                except: pass
                 return
             
             # LIMPIAR ARCHIVO TEMPORAL
@@ -757,7 +813,7 @@ def onmessage(update,bot:ObigramClient):
         is_text = msgText != ''
         isadmin = jdb.is_admin(username)
         
-        # NUEVO COMANDO PROXY_TEST
+        # NUEVO COMANDO PROXY_TEST MEJORADO
         if '/proxy_test' in msgText:
             if not isadmin:
                 bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
@@ -765,6 +821,8 @@ def onmessage(update,bot:ObigramClient):
             
             try:
                 current_proxy = user_info.get('proxy', '')
+                current_proxy = clean_proxy_text(current_proxy)
+                
                 if not current_proxy:
                     bot.sendMessage(update.message.chat.id,
                         '<b>🔍 Estado de Conexión</b>\n\n'
@@ -786,12 +844,13 @@ def onmessage(update,bot:ObigramClient):
                 if test_results['success']:
                     speed_icon = "⚡" if test_results['download_speed'] > 100 else "🐢"
                     moodle_icon = "✅" if test_results['moodle_status'] else "⚠️"
+                    speed_display = f"{test_results['download_speed']} KB/s" if test_results['download_speed'] > 0 else "No medible"
                     
                     bot.editMessageText(message,
                         f'<b>✅ Proxy FUNCIONANDO</b>\n\n'
                         f'<b>🔌 Proxy:</b> <code>{current_proxy}</code>\n'
                         f'<b>📶 Latencia:</b> {test_results["latency"]} ms\n'
-                        f'<b>{speed_icon} Velocidad:</b> {test_results["download_speed"]} KB/s\n'
+                        f'<b>{speed_icon} Velocidad:</b> {speed_display}\n'
                         f'<b>{moodle_icon} Moodle:</b> {"Conectado" if test_results["moodle_status"] else "No accesible"}\n\n'
                         f'<b>Estado general:</b> ✅ Operativo',
                         parse_mode='HTML'
@@ -837,7 +896,7 @@ def onmessage(update,bot:ObigramClient):
                 bot.sendMessage(update.message.chat.id, f'<b>❌ Error:</b> {str(e)}', parse_mode='HTML')
             return
 
-        # COMANDO PROXY MEJORADO
+        # COMANDO PROXY MEJORADO - ACEPTA CUALQUIER FORMATO DE TEXTO
         if '/proxy' in msgText:
             if not isadmin:
                 bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
@@ -848,6 +907,7 @@ def onmessage(update,bot:ObigramClient):
                 if len(parts) < 2:
                     # Mostrar ayuda si no se proporciona proxy
                     current_proxy = user_info.get('proxy', '')
+                    current_proxy = clean_proxy_text(current_proxy)
                     proxy_status = "✅ Configurado" if current_proxy else "❌ No configurado"
                     
                     bot.sendMessage(update.message.chat.id,
@@ -862,6 +922,7 @@ def onmessage(update,bot:ObigramClient):
                         '<b>Ejemplos:</b>\n'
                         '<code>/proxy http://190.6.64.154:8080</code>\n'
                         '<code>/proxy socks5://190.6.65.2:1080</code>\n\n'
+                        '<b>✅ El bot acepta cualquier formato de texto</b>\n\n'
                         '<b>Otros comandos:</b>\n'
                         '<code>/proxy_test</code> - Probar proxy actual\n'
                         '<code>/proxy_clear</code> - Usar conexión directa',
@@ -870,20 +931,16 @@ def onmessage(update,bot:ObigramClient):
                     return
                 
                 proxy_url = parts[1].strip()
+                # ✅ CORRECCIÓN: LIMPIAR EL TEXTO DEL PROXY
+                proxy_url = clean_proxy_text(proxy_url)
                 old_proxy = user_info.get('proxy', '')
+                old_proxy = clean_proxy_text(old_proxy)
                 
                 # Validar formato básico del proxy
                 if proxy_url and not any(proto in proxy_url for proto in ['http://', 'https://', 'socks4://', 'socks5://']):
-                    bot.sendMessage(update.message.chat.id,
-                        '<b>❌ Formato de proxy inválido</b>\n\n'
-                        '<b>Usa uno de estos formatos:</b>\n'
-                        '<code>http://ip:puerto</code>\n'
-                        '<code>https://ip:puerto</code>\n'
-                        '<code>socks4://ip:puerto</code>\n'
-                        '<code>socks5://ip:puerto</code>',
-                        parse_mode='HTML'
-                    )
-                    return
+                    # Intentar agregar protocolo por defecto
+                    if '://' not in proxy_url:
+                        proxy_url = 'http://' + proxy_url
                 
                 message = bot.sendMessage(update.message.chat.id, 
                     f'<b>🔧 Configurando proxy...</b>\n<code>{proxy_url}</code>', 
@@ -921,7 +978,8 @@ def onmessage(update,bot:ObigramClient):
                 
                 speed_info = ""
                 if test_results['download_speed'] > 0:
-                    speed_info = f"\n<b>📶 Velocidad:</b> {test_results['download_speed']} KB/s"
+                    speed_icon = "⚡" if test_results['download_speed'] > 100 else "📶"
+                    speed_info = f"\n<b>{speed_icon} Velocidad:</b> {test_results['download_speed']} KB/s"
                 
                 bot.editMessageText(message,
                     f'<b>✅ Proxy configurado</b>\n\n'
@@ -944,11 +1002,13 @@ def onmessage(update,bot:ObigramClient):
             
             try:
                 temp_proxy = user_info.get('temp_proxy', '')
+                temp_proxy = clean_proxy_text(temp_proxy)
                 if not temp_proxy:
                     bot.sendMessage(update.message.chat.id, '<b>❌ No hay proxy temporal para confirmar</b>', parse_mode='HTML')
                     return
                 
                 old_proxy = user_info.get('proxy', '')
+                old_proxy = clean_proxy_text(old_proxy)
                 user_info['proxy'] = temp_proxy
                 del user_info['temp_proxy']
                 jdb.save_data_user(username, user_info)
@@ -1492,6 +1552,7 @@ def onmessage(update,bot:ObigramClient):
             
             # Obtener estado del proxy
             current_proxy = user_info.get('proxy', '')
+            current_proxy = clean_proxy_text(current_proxy)
             proxy_status = f"┣⪼ 🔌 Proxy: <code>{current_proxy if current_proxy else 'Conexión directa'}</code>\n"
             
             # Obtener configuración de zips

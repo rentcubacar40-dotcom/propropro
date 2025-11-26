@@ -17,6 +17,7 @@ import socks
 import asyncio
 import threading
 import S5Crypto
+import random
 
 class CallingUpload:
     def __init__(self, func, filename, args):
@@ -660,18 +661,84 @@ class MoodleClient(object):
             print(f"Error in _upload_file_generic: {e}")
             return None, None
 
-    # Métodos específicos de upload
-    def upload_file(self, file, evidence=None, itemid=None, progressfunc=None, args=(), tokenize=False):
-        return self._upload_file_generic(file, itemid, progressfunc, args, tokenize, 'evidence')
+    # 🎯 NUEVOS MÉTODOS ESPECÍFICOS DE UPLOAD
+    def upload_file_draft(self, file, progressfunc=None, args=(), tokenize=False):
+        """Subida específica para archivos draft - MÉTODO NUEVO"""
+        print(f"📤 Subiendo a draft: {os.path.basename(file)}")
+        try:
+            result = self._upload_file_generic(
+                file=file,
+                itemid=None,
+                progressfunc=progressfunc,
+                args=args,
+                tokenize=tokenize,
+                upload_type='draft'
+            )
+            print(f"✅ Upload draft completado: {result[1]['url'] if result and len(result) > 1 else 'No URL'}")
+            return result
+        except Exception as e:
+            print(f"❌ Error en upload_file_draft: {e}")
+            return None, None
+
+    def upload_file_evidence(self, file, progressfunc=None, args=(), tokenize=False):
+        """Subida específica para evidencias - MÉTODO NUEVO"""
+        print(f"📤 Subiendo a evidence: {os.path.basename(file)}")
+        try:
+            result = self._upload_file_generic(
+                file=file,
+                itemid=None,
+                progressfunc=progressfunc,
+                args=args,
+                tokenize=tokenize,
+                upload_type='evidence'
+            )
+            print(f"✅ Upload evidence completado: {result[1]['url'] if result and len(result) > 1 else 'No URL'}")
+            return result
+        except Exception as e:
+            print(f"❌ Error en upload_file_evidence: {e}")
+            return None, None
 
     def upload_file_blog(self, file, blog=None, itemid=None, progressfunc=None, args=(), tokenize=False):
-        return self._upload_file_generic(file, itemid, progressfunc, args, tokenize, 'blog')
-
-    def upload_file_draft(self, file, progressfunc=None, args=(), tokenize=False):
-        return self._upload_file_generic(file, None, progressfunc, args, tokenize, 'draft')
+        """Subida específica para blog - MÉTODO NUEVO"""
+        print(f"📤 Subiendo a blog: {os.path.basename(file)}")
+        try:
+            result = self._upload_file_generic(
+                file=file,
+                itemid=itemid,
+                progressfunc=progressfunc,
+                args=args,
+                tokenize=tokenize,
+                upload_type='blog'
+            )
+            print(f"✅ Upload blog completado: {result[1]['url'] if result and len(result) > 1 else 'No URL'}")
+            return result
+        except Exception as e:
+            print(f"❌ Error en upload_file_blog: {e}")
+            return None, None
 
     def upload_file_calendar(self, file, progressfunc=None, args=(), tokenize=False):
-        return self._upload_file_generic(file, None, progressfunc, args, tokenize, 'calendario')
+        """Subida específica para calendario - MÉTODO NUEVO"""
+        print(f"📤 Subiendo a calendario: {os.path.basename(file)}")
+        try:
+            result = self._upload_file_generic(
+                file=file,
+                itemid=None,
+                progressfunc=progressfunc,
+                args=args,
+                tokenize=tokenize,
+                upload_type='calendario'
+            )
+            print(f"✅ Upload calendario completado: {result[1]['url'] if result and len(result) > 1 else 'No URL'}")
+            return result
+        except Exception as e:
+            print(f"❌ Error en upload_file_calendar: {e}")
+            return None, None
+
+    # Método original mantenido por compatibilidad
+    def upload_file(self, file, evidence=None, itemid=None, progressfunc=None, args=(), tokenize=False):
+        """Método original de upload - mantenido por compatibilidad"""
+        print(f"📤 Subiendo archivo (método original): {os.path.basename(file)}")
+        return self._upload_file_generic(file, itemid, progressfunc, args, tokenize, 'evidence')
 
     def parsejson(self, json_text):
         """Parsear JSON de respuesta de Moodle"""
@@ -770,3 +837,35 @@ class MoodleClient(object):
             'userid': self.userid,
             'platform': urllib.parse.urlparse(self.path).hostname
         }
+
+    # 🎯 MÉTODO SMART UPLOAD PARA COMPATIBILIDAD
+    def smart_upload(self, file, progressfunc=None, args=(), tokenize=False, upload_type='draft'):
+        """Método smart_upload para compatibilidad con el sistema bridge"""
+        print(f"🎯 Smart upload iniciado: {os.path.basename(file)}")
+        
+        # Usar el método genérico de upload
+        itemid, result = self._upload_file_generic(
+            file=file,
+            itemid=None,
+            progressfunc=progressfunc,
+            args=args,
+            tokenize=tokenize,
+            upload_type=upload_type
+        )
+        
+        if result:
+            print(f"✅ Smart upload completado: {result.get('url', 'Unknown')}")
+            return {
+                'success': True,
+                'url': result.get('url', ''),
+                'strategy': 'direct_smart',
+                'message': '✅ Subida smart completada',
+                'filedata': result
+            }
+        else:
+            print("❌ Smart upload falló")
+            return {
+                'success': False,
+                'error': 'Smart upload falló',
+                'strategy': 'direct_smart'
+            }

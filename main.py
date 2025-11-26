@@ -160,8 +160,8 @@ class SmartAcademicBridge:
         
         return strategy_map.get((bridge_platform, target_platform), 'cross_platform_link')
 
-    def smart_upload(self, file_path, target_platform_url, progress_callback=None):
-        """Subida inteligente con estrategia automática"""
+    def smart_upload(self, file_path, target_platform_url, progressfunc=None, args=(), tokenize=False, upload_type='evidence'):
+        """Subida inteligente con estrategia automática - VERSIÓN CORREGIDA"""
         try:
             # Obtener estrategia óptima
             strategy_plan = self.get_optimal_strategy(target_platform_url)
@@ -173,13 +173,13 @@ class SmartAcademicBridge:
             
             # Ejecutar estrategia seleccionada
             if strategy_plan['strategy'] == 'direct_upload':
-                return self._execute_direct_upload(file_path, strategy_plan, progress_callback)
+                return self._execute_direct_upload(file_path, strategy_plan, progressfunc, args)
             elif strategy_plan['strategy'] == 'cross_platform_link':
-                return self._execute_cross_platform_link(file_path, strategy_plan, progress_callback)
+                return self._execute_cross_platform_link(file_path, strategy_plan, progressfunc, args)
             elif strategy_plan['strategy'] == 'mirror_upload':
-                return self._execute_mirror_upload(file_path, strategy_plan, progress_callback)
+                return self._execute_mirror_upload(file_path, strategy_plan, progressfunc, args)
             elif strategy_plan['strategy'] == 'url_resource':
-                return self._execute_url_resource(file_path, strategy_plan, progress_callback)
+                return self._execute_url_resource(file_path, strategy_plan, progressfunc, args)
             else:
                 return {'error': f'Estrategia no implementada: {strategy_plan["strategy"]}'}
                 
@@ -187,7 +187,7 @@ class SmartAcademicBridge:
             print(f"❌ Error en smart_upload: {e}")
             return {'error': str(e)}
 
-    def _execute_direct_upload(self, file_path, strategy_plan, progress_callback):
+    def _execute_direct_upload(self, file_path, strategy_plan, progressfunc=None, args=()):
         """Estrategia 1: Subida directa (si la plataforma es accesible)"""
         try:
             target_platform = strategy_plan['target_platform']
@@ -204,7 +204,8 @@ class SmartAcademicBridge:
             if client.login():
                 result = client.upload_file_draft(
                     file_path,
-                    progressfunc=progress_callback
+                    progressfunc=progressfunc,
+                    args=args
                 )
                 
                 if result:
@@ -222,7 +223,7 @@ class SmartAcademicBridge:
             
         return {'error': 'Subida directa fallida'}
 
-    def _execute_cross_platform_link(self, file_path, strategy_plan, progress_callback):
+    def _execute_cross_platform_link(self, file_path, strategy_plan, progressfunc=None, args=()):
         """Estrategia 2: Enlace cruzado entre plataformas"""
         try:
             bridge_platform = strategy_plan['bridge_platform']
@@ -242,7 +243,8 @@ class SmartAcademicBridge:
             if bridge_client.login():
                 bridge_result = bridge_client.upload_file_draft(
                     file_path,
-                    progressfunc=progress_callback
+                    progressfunc=progressfunc,
+                    args=args
                 )
                 
                 if bridge_result:
@@ -295,7 +297,7 @@ class SmartAcademicBridge:
             
         return {'error': 'Enlace cruzado fallido'}
 
-    def _execute_mirror_upload(self, file_path, strategy_plan, progress_callback):
+    def _execute_mirror_upload(self, file_path, strategy_plan, progressfunc=None, args=()):
         """Estrategia 3: Espejo entre plataformas (subir a ambas)"""
         try:
             bridge_platform = strategy_plan['bridge_platform']
@@ -315,7 +317,8 @@ class SmartAcademicBridge:
             bridge_client.login()
             bridge_result = bridge_client.upload_file_draft(
                 file_path,
-                progressfunc=progress_callback
+                progressfunc=progressfunc,
+                args=args
             )
             
             bridge_url = bridge_result[1]['url'] if bridge_result else None
@@ -356,7 +359,7 @@ class SmartAcademicBridge:
             
         return {'error': 'Espejo fallido'}
 
-    def _execute_url_resource(self, file_path, strategy_plan, progress_callback):
+    def _execute_url_resource(self, file_path, strategy_plan, progressfunc=None, args=()):
         """Estrategia 4: Recurso URL"""
         try:
             bridge_platform = strategy_plan['bridge_platform']
@@ -376,7 +379,8 @@ class SmartAcademicBridge:
             if bridge_client.login():
                 bridge_result = bridge_client.upload_file_draft(
                     file_path,
-                    progressfunc=progress_callback
+                    progressfunc=progressfunc,
+                    args=args
                 )
                 
                 if bridge_result:

@@ -22,10 +22,6 @@ import ProxyCloud
 import socket
 import S5Crypto
 import threading
-import random
-import aiohttp
-import asyncio
-import re
 
 def create_progress_bar(percentage, bars=15):
     """Crea barra de progreso estilo S1 con ⬢⬡"""
@@ -286,239 +282,20 @@ def processUploadFiles(filename,filesize,files,update,bot,message,thread=None,jd
         bot.editMessageText(message,f'<b>❌ Error</b>\n<code>{str(ex)}</code>', parse_mode='HTML')
         return None
 
-def get_platform_compression_settings(host, user_zips=100):
-    """Configuración inteligente de compresión por plataforma"""
-    settings = {
-        'https://eva.uo.edu.cu/': {
-            'name': 'EVA UO',
-            'max_size_mb': 99,
-            'compress_enabled': True,
-            'link_duration': '3 días'
-        },
-        'https://cursos.uo.edu.cu/': {
-            'name': 'CURSOS UO', 
-            'max_size_mb': 99,
-            'compress_enabled': True,
-            'link_duration': '3 días'
-        },
-        'https://aulacened.uci.cu/': {
-            'name': 'CENED',
-            'max_size_mb': user_zips,
-            'compress_enabled': True,
-            'link_duration': '8-30 minutos'
-        }
-    }
-    
-    # Buscar coincidencia parcial para mayor flexibilidad
-    for key, value in settings.items():
-        if key in host:
-            return value
-    
-    # Configuración por defecto
-    return {
-        'name': 'Personalizada',
-        'max_size_mb': user_zips,
-        'compress_enabled': True,
-        'link_duration': '3 días'
-    }
-
-def should_compress_file(platform_settings, file_size, file_extension):
-    """Decide inteligentemente cuándo comprimir un archivo"""
-    if not platform_settings['compress_enabled']:
-        return False
-        
-    # No comprimir archivos ya comprimidos
-    compressed_extensions = ['zip', 'rar', '7z', 'tar', 'gz', 'bz2']
-    if file_extension.lower() in compressed_extensions:
-        return False
-        
-    max_size_bytes = platform_settings['max_size_mb'] * 1024 * 1024
-    return file_size > max_size_bytes
-
-def clean_proxy_text(proxy_text):
-    """Limpia el texto del proxy eliminando formatos HTML y caracteres especiales"""
-    if not proxy_text:
-        return ""
-    
-    # Eliminar etiquetas HTML
-    clean_text = re.sub(r'<[^>]+>', '', proxy_text)
-    
-    # Eliminar caracteres especiales que no pertenecen a una URL de proxy
-    clean_text = re.sub(r'[^\w:/.-]', '', clean_text)
-    
-    # Asegurarse de que tenga el formato correcto
-    if clean_text and not any(proto in clean_text for proto in ['http://', 'https://', 'socks4://', 'socks5://']):
-        # Si no tiene protocolo, asumir http://
-        if '://' not in clean_text:
-            clean_text = 'http://' + clean_text
-    
-    return clean_text.strip()
-
-async def test_proxy_connection(user_info):
-    """
-    Test MEJORADO de conexión del proxy con medición REAL de velocidad
-    """
-    results = {
-        'success': False,
-        'latency': 0,
-        'download_speed': 0,
-        'upload_speed': 0,
-        'moodle_status': False,
-        'error': None
-    }
-    
-    try:
-        proxy_url = user_info.get('proxy', '')
-        proxy_url = clean_proxy_text(proxy_url)
-        
-        # Si no hay proxy, probar conexión directa
-        if not proxy_url:
-            results['success'] = True
-            results['moodle_status'] = await test_moodle_direct(user_info)
-            # Medir velocidad directa
-            direct_speed = await test_download_speed(None)
-            results['download_speed'] = direct_speed
-            return results
-        
-        # Configurar proxy
-        proxy_config = ProxyCloud.parse(proxy_url)
-        proxy_connector = None
-        
-        if proxy_config:
-            proxy_connector = aiohttp.TCPConnector(
-                proxy=proxy_config['url'],
-                verify_ssl=False,
-                limit=1
-            )
-        
-        # TEST 1: Latencia REAL
-        latency_results = []
-        for i in range(3):  # 3 intentos para promediar
-            try:
-                timeout = aiohttp.ClientTimeout(total=10)
-                async with aiohttp.ClientSession(timeout=timeout, connector=proxy_connector) as session:
-                    start_time = time.time()
-                    async with session.get('http://httpbin.org/delay/0', ssl=False) as response:
-                        if response.status == 200:
-                            latency = (time.time() - start_time) * 1000  # ms
-                            if latency < 30000:  # Filtrar latencias imposibles
-                                latency_results.append(latency)
-            except:
-                pass
-        
-        if latency_results:
-            results['latency'] = round(sum(latency_results) / len(latency_results), 2)
-            results['success'] = True
-        else:
-            results['error'] = "No se pudo medir la latencia"
-            return results
-        
-        # TEST 2: Velocidad de descarga MEJORADA
-        download_speed = await test_download_speed(proxy_connector)
-        results['download_speed'] = download_speed
-        
-        # TEST 3: Conexión a Moodle
-        results['moodle_status'] = await test_moodle_with_proxy(user_info, proxy_connector)
-        
-        return results
-        
-    except Exception as e:
-        results['error'] = f"Error general: {str(e)}"
-        return results
-
-async def test_download_speed(connector):
-    """
-    Test MEJORADO de velocidad de descarga
-    """
-    try:
-        # Usar múltiples servidores de prueba
-        test_urls = [
-            'http://speedtest.ftp.otenet.gr/files/test1Mb.db',
-            'http://ipv4.download.thinkbroadband.com/1MB.zip',
-            'http://proof.ovh.net/files/1Mb.dat'
-        ]
-        
-        speeds = []
-        
-        for test_url in test_urls:
-            try:
-                timeout = aiohttp.ClientTimeout(total=15)
-                async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
-                    start_time = time.time()
-                    total_downloaded = 0
-                    
-                    async with session.get(test_url, ssl=False) as response:
-                        if response.status == 200:
-                            # Descargar por 5 segundos máximo
-                            async for chunk in response.content.iter_chunked(8192):
-                                total_downloaded += len(chunk)
-                                elapsed = time.time() - start_time
-                                if elapsed >= 5:  # 5 segundos de prueba
-                                    break
-                            
-                            if total_downloaded > 0 and elapsed > 0:
-                                speed_kbs = (total_downloaded / elapsed) / 1024
-                                if speed_kbs > 0:  # Solo agregar velocidades válidas
-                                    speeds.append(speed_kbs)
-                                    
-            except:
-                continue
-        
-        if speeds:
-            # Usar el promedio de las velocidades medidas
-            return round(sum(speeds) / len(speeds), 2)
-        else:
-            return 0
-            
-    except Exception as e:
-        print(f"Error en test de velocidad: {e}")
-        return 0
-
-async def test_moodle_with_proxy(user_info, connector):
-    """Test de conexión a Moodle específicamente"""
-    try:
-        timeout = aiohttp.ClientTimeout(total=10)
-        async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
-            moodle_host = user_info['moodle_host']
-            # Intentar múltiples endpoints
-            endpoints = [
-                f"{moodle_host}/login/index.php",
-                f"{moodle_host}/",
-                f"{moodle_host}/my/"
-            ]
-            
-            for endpoint in endpoints:
-                try:
-                    async with session.get(endpoint, ssl=False) as response:
-                        if response.status == 200:
-                            return True
-                except:
-                    continue
-            return False
-    except:
-        return False
-
-async def test_moodle_direct(user_info):
-    """Test de conexión directa a Moodle"""
-    try:
-        timeout = aiohttp.ClientTimeout(total=10)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            moodle_host = user_info['moodle_host']
-            async with session.get(f"{moodle_host}/login/index.php", ssl=False) as response:
-                return response.status == 200
-    except:
-        return False
-
 def processFile(update,bot,message,file,thread=None,jdb=None):
     try:
         file_size = get_file_size(file)
         username = update.message.sender.username
         getUser = jdb.get_user(username)
         
-        # ✅ CORRECCIÓN: USAR SIEMPRE LA CONFIGURACIÓN zips DEL USUARIO
-        user_zips = getUser.get('zips', 100)  # Valor por defecto 100 MB
-        max_file_size = 1024 * 1024 * user_zips  # Convertir a bytes
-        
+        # CONFIGURAR ZIPS SEGÚN PLATAFORMA
+        if getUser['moodle_host'] == 'https://eva.uo.edu.cu/':
+            max_file_size = 1024 * 1024 * 99  # 99 MB para EVA
+        elif getUser['moodle_host'] == 'https://cursos.uo.edu.cu/':
+            max_file_size = 1024 * 1024 * 99  # 99 MB para CURSOS
+        else:
+            max_file_size = 1024 * 1024 * getUser['zips']  # 100 MB para CENED por defecto
+            
         file_upload_count = 0
         client = None
         findex = 0
@@ -534,29 +311,10 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
         base_name = original_filename.split('.')[0]
         file_extension = original_filename.split('.')[-1].lower() if '.' in original_filename else ''
         is_compressed_file = file_extension in ['zip', 'rar', '7z', 'tar', 'gz']
-        
-        # VERIFICAR SI EL ARCHIVO YA ES UN ZIP (PARA EVITAR COMPRIMIR DOS VECES)
-        is_already_zip = file_extension == 'zip'
-        
-        # ✅ CORRECCIÓN: LÓGICA UNIFICADA DE COMPRESIÓN
-        should_compress = (
-            file_size > max_file_size and 
-            not is_compressed_file and 
-            not is_already_zip and
-            user_zips > 0  # Solo comprimir si zips está configurado
-        )
             
-        if should_compress:
-            # ✅ CORRECCIÓN: ACTUALIZAR MENSAJE DE COMPRESIÓN EN TIEMPO REAL
-            total_parts = (file_size + max_file_size - 1) // max_file_size  # Cálculo correcto de partes
-            compresingInfo = format_s1_message("📚 Comprimiendo", [
-                f"🔖 Nombre: {original_filename}",
-                f"🗂 Tamaño Total: {sizeof_fmt(file_size)}",
-                f"📂 Tamaño Partes: {sizeof_fmt(max_file_size)}",
-                f"💾 Cantidad Partes: {total_parts}",
-                f"⏳ Procesando..."
-            ])
-            bot.editMessageText(message, compresingInfo)
+        if file_size > max_file_size and not is_compressed_file:
+            compresingInfo = infos.createCompresing(file,file_size,max_file_size)
+            bot.editMessageText(message,compresingInfo)
             
             # CREAR ARCHIVO TEMPORAL CON NOMBRE CORRECTO
             temp_dir = "temp_" + createID()
@@ -568,45 +326,14 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
             shutil.copy2(file, temp_file_path)
             
             zipname = base_name + createID()
+            mult_file = zipfile.MultiFile(zipname, max_file_size)
             
-            try:
-                # ✅ CORRECCIÓN: USAR MultiFile CORRECTAMENTE
-                mult_file = zipfile.MultiFile(zipname, user_zips)
-                
-                # CREAR ZIP CON EL ARCHIVO Y SU NOMBRE ORIGINAL
-                with zipfile.ZipFile(mult_file, mode='w', compression=zipfile.ZIP_DEFLATED) as zipf:
-                    # Agregar el archivo con su nombre original preservado
-                    zipf.write(temp_file_path, arcname=original_filename)
-                
-                mult_file.close()
-                
-                # VERIFICAR QUE LOS ARCHIVOS ZIP SE CREARON CORRECTAMENTE
-                if not mult_file.files or len(mult_file.files) == 0:
-                    bot.editMessageText(message, '<b>❌ Error al crear archivos comprimidos</b>', parse_mode='HTML')
-                    # Limpiar archivos temporales
-                    try:
-                        shutil.rmtree(temp_dir)
-                    except: pass
-                    return
-                    
-                # ✅ ACTUALIZAR MENSAJE CON PARTES REALES CREADAS
-                actual_parts = len(mult_file.files)
-                compresingInfo = format_s1_message("✅ Compresión Completada", [
-                    f"🔖 Nombre: {original_filename}",
-                    f"🗂 Tamaño Total: {sizeof_fmt(file_size)}",
-                    f"📂 Tamaño Partes: {sizeof_fmt(max_file_size)}",
-                    f"💾 Partes Creadas: {actual_parts}",
-                    f"🚀 Iniciando subida..."
-                ])
-                bot.editMessageText(message, compresingInfo)
-                
-            except Exception as e:
-                bot.editMessageText(message, f'<b>❌ Error en compresión:</b> {str(e)}', parse_mode='HTML')
-                # Limpiar archivos temporales
-                try:
-                    shutil.rmtree(temp_dir)
-                except: pass
-                return
+            # CREAR ZIP CON EL ARCHIVO Y SU NOMBRE ORIGINAL
+            with zipfile.ZipFile(mult_file, mode='w', compression=zipfile.ZIP_DEFLATED) as zipf:
+                # Agregar el archivo con su nombre original preservado
+                zipf.write(temp_file_path, arcname=original_filename)
+            
+            mult_file.close()
             
             # LIMPIAR ARCHIVO TEMPORAL
             try:
@@ -630,14 +357,13 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
                         
         else:
             # Para archivos pequeños o ya comprimidos, usar el nombre original
-            files_to_upload = [file]
-            client = processUploadFiles(original_filename, file_size, files_to_upload, update, bot, message, thread=thread, jdb=jdb)
+            client = processUploadFiles(original_filename,file_size,[file],update,bot,message,thread=thread,jdb=jdb)
             file_upload_count = 1
             
         if thread and thread.getStore('stop'):
             return
             
-        # ACTUALIZAR ESTADÍSTICAS DE USUARIO
+        # ACTUALIZAR ESTADÍSTICAS DE USUO
         try:
             file_size_mb = file_size / (1024 * 1024)
             current_total = getUser.get('total_mb_used', 0)
@@ -700,22 +426,13 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
             platform_name = get_platform_name(getUser['moodle_host'])
             finish_title = "✅ Subida Completada"
             
-            # CORRECCIÓN: Información clara sobre las partes
-            if total_parts > 1:
-                parts_info = f"💾 Partes: {total_parts} (descomprimir todas para obtener el archivo original)"
-            else:
-                if is_compressed_file:
-                    parts_info = "💾 Archivo comprimido (descomprimir para obtener contenido)"
-                else:
-                    parts_info = "💾 Archivo único"
-            
             if platform_name == 'CENED':
                 finishInfo = format_s1_message(finish_title, [
                     f"📄 Archivo: {original_filename}",
                     f"📦 Tamaño total: {sizeof_fmt(file_size)}",
                     f"🔗 Enlaces generados: {len(files)}",
                     f"⏱️ Duración enlaces: 8-30 minutos",
-                    parts_info
+                    f"💾 Partes: {total_parts}" if total_parts > 1 else "💾 Archivo único"
                 ])
             else:
                 finishInfo = format_s1_message(finish_title, [
@@ -723,7 +440,7 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
                     f"📦 Tamaño total: {sizeof_fmt(file_size)}",
                     f"🔗 Enlaces generados: {len(files)}",
                     f"⏱️ Duración enlaces: 3 días",
-                    parts_info
+                    f"💾 Partes: {total_parts}" if total_parts > 1 else "💾 Archivo único"
                 ])
             
             bot.sendMessage(message.chat.id, finishInfo)
@@ -735,7 +452,6 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
                 sendTxt(txtname,files,update,bot)
     except Exception as ex:
         print(f"Error en processFile: {ex}")
-        bot.editMessageText(message, f'<b>❌ Error procesando archivo:</b>\n<code>{str(ex)}</code>', parse_mode='HTML')
 
 def ddl(update,bot,message,url,file_name='',thread=None,jdb=None):
     try:
@@ -867,252 +583,6 @@ def onmessage(update,bot:ObigramClient):
         is_text = msgText != ''
         isadmin = jdb.is_admin(username)
         
-        # NUEVO COMANDO PROXY_TEST MEJORADO
-        if '/proxy_test' in msgText:
-            if not isadmin:
-                bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
-                return
-            
-            try:
-                current_proxy = user_info.get('proxy', '')
-                current_proxy = clean_proxy_text(current_proxy)
-                
-                if not current_proxy:
-                    bot.sendMessage(update.message.chat.id,
-                        '<b>🔍 Estado de Conexión</b>\n\n'
-                        '<b>Proxy actual:</b> Conexión directa\n'
-                        '<b>Estado:</b> ✅ Conexión directa activa\n\n'
-                        '<b>Usa /proxy para configurar un proxy</b>',
-                        parse_mode='HTML'
-                    )
-                    return
-                
-                message = bot.sendMessage(update.message.chat.id, 
-                    f'<b>🧪 Probando proxy...</b>\n<code>{current_proxy}</code>\n\n⏳ <i>Esto puede tomar unos segundos...</i>', 
-                    parse_mode='HTML'
-                )
-                
-                # Ejecutar test de proxy
-                test_results = asyncio.run(test_proxy_connection(user_info))
-                
-                if test_results['success']:
-                    # Clasificar velocidad correctamente
-                    speed_kbs = test_results['download_speed']
-                    if speed_kbs > 1000:
-                        speed_display = f"{speed_kbs/1024:.2f} MB/s"
-                        speed_icon = "⚡"
-                    elif speed_kbs > 100:
-                        speed_display = f"{speed_kbs:.0f} KB/s"
-                        speed_icon = "🚀"
-                    elif speed_kbs > 10:
-                        speed_display = f"{speed_kbs:.0f} KB/s"
-                        speed_icon = "📶"
-                    else:
-                        speed_display = f"{speed_kbs:.2f} KB/s" if speed_kbs > 0 else "No medible"
-                        speed_icon = "🐢"
-                    
-                    # Clasificar latencia correctamente
-                    latency_ms = test_results['latency']
-                    if latency_ms < 100:
-                        latency_status = "🎯 Excelente"
-                    elif latency_ms < 300:
-                        latency_status = "✅ Buena"
-                    elif latency_ms < 1000:
-                        latency_status = "⚠️ Aceptable"
-                    else:
-                        latency_status = "🐢 Lenta"
-                    
-                    moodle_icon = "✅" if test_results['moodle_status'] else "⚠️"
-                    
-                    bot.editMessageText(message,
-                        f'<b>✅ Proxy FUNCIONANDO</b>\n\n'
-                        f'<b>🔌 Proxy:</b> <code>{current_proxy}</code>\n'
-                        f'<b>📶 Latencia:</b> {latency_ms} ms ({latency_status})\n'
-                        f'<b>{speed_icon} Velocidad:</b> {speed_display}\n'
-                        f'<b>{moodle_icon} Moodle:</b> {"Conectado" if test_results["moodle_status"] else "No accesible"}\n\n'
-                        f'<b>Estado general:</b> ✅ Operativo',
-                        parse_mode='HTML'
-                    )
-                else:
-                    bot.editMessageText(message,
-                        f'<b>❌ Proxy NO FUNCIONA</b>\n\n'
-                        f'<b>🔌 Proxy:</b> <code>{current_proxy}</code>\n'
-                        f'<b>📛 Error:</b> {test_results["error"]}\n\n'
-                        f'<b>Solución:</b>\n'
-                        f'• Verifica el formato del proxy\n'
-                        f'• Prueba con /proxy_clear para conexión directa\n'
-                        f'• Usa /proxy para configurar otro proxy',
-                        parse_mode='HTML'
-                    )
-                    
-            except Exception as e:
-                bot.sendMessage(update.message.chat.id, 
-                    f'<b>❌ Error probando proxy:</b>\n<code>{str(e)}</code>', 
-                    parse_mode='HTML'
-                )
-            return
-
-        if '/proxy_clear' in msgText:
-            if not isadmin:
-                bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
-                return
-            
-            try:
-                old_proxy = user_info.get('proxy', '')
-                user_info['proxy'] = ''
-                jdb.save_data_user(username, user_info)
-                jdb.save()
-                
-                bot.sendMessage(update.message.chat.id,
-                    '<b>✅ Proxy eliminado</b>\n\n'
-                    f'<b>Proxy anterior:</b> <code>{old_proxy if old_proxy else "Ninguno"}</code>\n'
-                    f'<b>Estado actual:</b> Conexión directa\n\n'
-                    f'<b>Ahora se usará conexión directa al servidor</b>',
-                    parse_mode='HTML'
-                )
-            except Exception as e:
-                bot.sendMessage(update.message.chat.id, f'<b>❌ Error:</b> {str(e)}', parse_mode='HTML')
-            return
-
-        # COMANDO PROXY MEJORADO - ACEPTA CUALQUIER FORMATO DE TEXTO
-        if '/proxy' in msgText:
-            if not isadmin:
-                bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
-                return
-            
-            try:
-                parts = msgText.split(' ', 1)
-                if len(parts) < 2:
-                    # Mostrar ayuda si no se proporciona proxy
-                    current_proxy = user_info.get('proxy', '')
-                    current_proxy = clean_proxy_text(current_proxy)
-                    proxy_status = "✅ Configurado" if current_proxy else "❌ No configurado"
-                    
-                    bot.sendMessage(update.message.chat.id,
-                        '<b>🔧 Configuración de Proxy</b>\n\n'
-                        f'<b>Proxy actual:</b> <code>{current_proxy if current_proxy else "Conexión directa"}</code>\n'
-                        f'<b>Estado:</b> {proxy_status}\n\n'
-                        '<b>Formatos soportados:</b>\n'
-                        '<code>/proxy http://ip:puerto</code>\n'
-                        '<code>/proxy https://ip:puerto</code>\n'  
-                        '<code>/proxy socks5://ip:puerto</code>\n'
-                        '<code>/proxy socks4://ip:puerto</code>\n\n'
-                        '<b>Ejemplos:</b>\n'
-                        '<code>/proxy http://190.6.64.154:8080</code>\n'
-                        '<code>/proxy socks5://190.6.65.2:1080</code>\n\n'
-                        '<b>✅ El bot acepta cualquier formato de texto</b>\n\n'
-                        '<b>Otros comandos:</b>\n'
-                        '<code>/proxy_test</code> - Probar proxy actual\n'
-                        '<code>/proxy_clear</code> - Usar conexión directa',
-                        parse_mode='HTML'
-                    )
-                    return
-                
-                proxy_url = parts[1].strip()
-                # ✅ CORRECCIÓN: LIMPIAR EL TEXTO DEL PROXY
-                proxy_url = clean_proxy_text(proxy_url)
-                old_proxy = user_info.get('proxy', '')
-                old_proxy = clean_proxy_text(old_proxy)
-                
-                # Validar formato básico del proxy
-                if proxy_url and not any(proto in proxy_url for proto in ['http://', 'https://', 'socks4://', 'socks5://']):
-                    # Intentar agregar protocolo por defecto
-                    if '://' not in proxy_url:
-                        proxy_url = 'http://' + proxy_url
-                
-                message = bot.sendMessage(update.message.chat.id, 
-                    f'<b>🔧 Configurando proxy...</b>\n<code>{proxy_url}</code>', 
-                    parse_mode='HTML'
-                )
-                
-                # Probar el nuevo proxy antes de guardarlo
-                test_user_info = user_info.copy()
-                test_user_info['proxy'] = proxy_url
-                
-                test_results = asyncio.run(test_proxy_connection(test_user_info))
-                
-                if proxy_url and not test_results['success']:
-                    bot.editMessageText(message,
-                        f'<b>❌ Proxy no funciona</b>\n\n'
-                        f'<b>Proxy:</b> <code>{proxy_url}</code>\n'
-                        f'<b>Error:</b> {test_results["error"]}\n\n'
-                        f'<b>¿Quieres guardarlo de todas formas?</b>\n'
-                        f'Responde <code>/confirm_proxy</code> para guardar\n'
-                        f'o configura otro proxy',
-                        parse_mode='HTML'
-                    )
-                    # Guardar temporalmente para confirmación
-                    user_info['temp_proxy'] = proxy_url
-                    jdb.save_data_user(username, user_info)
-                    jdb.save()
-                    return
-                
-                # Guardar el proxy
-                user_info['proxy'] = proxy_url
-                if 'temp_proxy' in user_info:
-                    del user_info['temp_proxy']
-                jdb.save_data_user(username, user_info)
-                jdb.save()
-                
-                speed_info = ""
-                if test_results['download_speed'] > 0:
-                    speed_kbs = test_results['download_speed']
-                    if speed_kbs > 1000:
-                        speed_display = f"{speed_kbs/1024:.2f} MB/s"
-                        speed_icon = "⚡"
-                    elif speed_kbs > 100:
-                        speed_display = f"{speed_kbs:.0f} KB/s"
-                        speed_icon = "🚀"
-                    else:
-                        speed_display = f"{speed_kbs:.0f} KB/s"
-                        speed_icon = "📶"
-                    speed_info = f"\n<b>{speed_icon} Velocidad:</b> {speed_display}"
-                
-                bot.editMessageText(message,
-                    f'<b>✅ Proxy configurado</b>\n\n'
-                    f'<b>Proxy anterior:</b> <code>{old_proxy if old_proxy else "Ninguno"}</code>\n'
-                    f'<b>Proxy nuevo:</b> <code>{proxy_url if proxy_url else "Conexión directa"}</code>\n'
-                    f'<b>Estado:</b> ✅ Configurado correctamente{speed_info}\n\n'
-                    f'<b>Usa /proxy_test para verificar la conexión</b>',
-                    parse_mode='HTML'
-                )
-                
-            except Exception as e:
-                bot.sendMessage(update.message.chat.id, f'<b>❌ Error configurando proxy:</b>\n<code>{str(e)}</code>', parse_mode='HTML')
-            return
-
-        # CONFIRMACIÓN DE PROXY (cuando no funciona pero se quiere guardar)
-        if '/confirm_proxy' in msgText:
-            if not isadmin:
-                bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
-                return
-            
-            try:
-                temp_proxy = user_info.get('temp_proxy', '')
-                temp_proxy = clean_proxy_text(temp_proxy)
-                if not temp_proxy:
-                    bot.sendMessage(update.message.chat.id, '<b>❌ No hay proxy temporal para confirmar</b>', parse_mode='HTML')
-                    return
-                
-                old_proxy = user_info.get('proxy', '')
-                old_proxy = clean_proxy_text(old_proxy)
-                user_info['proxy'] = temp_proxy
-                del user_info['temp_proxy']
-                jdb.save_data_user(username, user_info)
-                jdb.save()
-                
-                bot.sendMessage(update.message.chat.id,
-                    f'<b>⚠️ Proxy guardado (sin verificación)</b>\n\n'
-                    f'<b>Proxy anterior:</b> <code>{old_proxy if old_proxy else "Ninguno"}</code>\n'
-                    f'<b>Proxy nuevo:</b> <code>{temp_proxy}</code>\n'
-                    f'<b>Estado:</b> ⚠️ Guardado sin verificación\n\n'
-                    f'<b>Puede que no funcione. Usa /proxy_test para verificar.</b>',
-                    parse_mode='HTML'
-                )
-            except Exception as e:
-                bot.sendMessage(update.message.chat.id, f'<b>❌ Error:</b> {str(e)}', parse_mode='HTML')
-            return
-
         # COMANDOS DE CONFIGURACIÓN RÁPIDA PARA ADMIN
         if '/moodle_eva' in msgText and isadmin:
             user_info['moodle_host'] = 'https://eva.uo.edu.cu/'
@@ -1182,7 +652,7 @@ def onmessage(update,bot:ObigramClient):
                             'repo_id': 4,
                             'uptype': 'draft',
                             'name': 'EVA UO',
-                            'zips': 99
+                            'zips': 99  # 99 MB para EVA
                         },
                         'cursos': {
                             'host': 'https://cursos.uo.edu.cu/',
@@ -1191,7 +661,7 @@ def onmessage(update,bot:ObigramClient):
                             'repo_id': 4,
                             'uptype': 'draft',
                             'name': 'CURSOS UO',
-                            'zips': 99
+                            'zips': 99  # 99 MB para CURSOS
                         },
                         'cened': {
                             'host': 'https://aulacened.uci.cu/',
@@ -1200,7 +670,7 @@ def onmessage(update,bot:ObigramClient):
                             'repo_id': 5,
                             'uptype': 'draft',
                             'name': 'CENED',
-                            'zips': 100
+                            'zips': 100  # 100 MB para CENED
                         }
                     }
                     
@@ -1306,8 +776,7 @@ def onmessage(update,bot:ObigramClient):
             '/zips', '/account', '/host', '/repoid', '/tokenize', 
             '/cloud', '/uptype', '/proxy', '/dir', '/myuser', 
             '/files', '/txt_', '/del_', '/delall', '/adduserconfig', 
-            '/banuser', '/getdb', '/moodle_eva', '/moodle_cursos', '/moodle_cened',
-            '/proxy_test', '/proxy_clear', '/confirm_proxy'
+            '/banuser', '/getdb', '/moodle_eva', '/moodle_cursos', '/moodle_cened'
         ]):
             bot.sendMessage(update.message.chat.id,
                            "<b>🚫 Acceso Restringido</b>\n\n"
@@ -1433,8 +902,6 @@ def onmessage(update,bot:ObigramClient):
                 statInfo = infos.createStat(username,getUser,jdb.is_admin(username))
                 bot.sendMessage(update.message.chat.id,statInfo, parse_mode='HTML')
                 return
-        
-        # ✅ COMANDO ZIPS MEJORADO
         if '/zips' in msgText:
             if not isadmin:
                 bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
@@ -1443,41 +910,14 @@ def onmessage(update,bot:ObigramClient):
             if getUser:
                 try:
                    size = int(str(msgText).split(' ')[1])
-                   
-                   # ✅ VALIDACIÓN MEJORADA
-                   if size <= 0:
-                       bot.sendMessage(update.message.chat.id,'<b>❌ Error:</b> El tamaño debe ser mayor a 0 MB', parse_mode='HTML')
-                       return
-                       
-                   if size > 500:  # Límite máximo de 500 MB
-                       bot.sendMessage(update.message.chat.id,'<b>❌ Error:</b> El tamaño máximo permitido es 500 MB', parse_mode='HTML')
-                       return
-                   
                    getUser['zips'] = size
                    jdb.save_data_user(username,getUser)
                    jdb.save()
-                   
-                   # ✅ MENSAJE INFORMATIVO MEJORADO
-                   platform_name = get_platform_name(getUser['moodle_host'])
-                   msg = format_s1_message("✅ Configuración Actualizada", [
-                       f"📦 Tamaño de partes: {size} MB",
-                       f"🏫 Plataforma: {platform_name}",
-                       f"📝 Archivos > {size} MB se comprimirán automáticamente"
-                   ])
-                   
-                   bot.sendMessage(update.message.chat.id, msg)
+                   msg = f'<b>✅ Zips configurados a</b> {sizeof_fmt(size*1024*1024)} <b>por parte</b>'
+                   bot.sendMessage(update.message.chat.id,msg, parse_mode='HTML')
                 except:
-                   bot.sendMessage(update.message.chat.id,
-                                  '<b>❌ Error en el formato</b>\n\n'
-                                  '<b>Uso correcto:</b>\n'
-                                  '<code>/zips tamaño_en_mb</code>\n\n'
-                                  '<b>Ejemplos:</b>\n'
-                                  '<code>/zips 1</code> - Partes de 1MB\n'
-                                  '<code>/zips 50</code> - Partes de 50MB\n'
-                                  '<code>/zips 100</code> - Partes de 100MB',
-                                  parse_mode='HTML')
+                   bot.sendMessage(update.message.chat.id,'<b>❌ Error:</b> <code>/zips tamaño_en_mb</code>', parse_mode='HTML')
                 return
-        
         if '/account' in msgText:
             if not isadmin:
                 bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
@@ -1595,6 +1035,26 @@ def onmessage(update,bot:ObigramClient):
             except:
                 bot.sendMessage(update.message.chat.id,'<b>❌ Error:</b> <code>/uptype (evidence, draft, blog)</code>', parse_mode='HTML')
             return
+        if '/proxy' in msgText:
+            if not isadmin:
+                bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
+                return
+            try:
+                cmd = str(msgText).split(' ',2)
+                proxy = cmd[1]
+                getUser = user_info
+                if getUser:
+                    getUser['proxy'] = proxy
+                    jdb.save_data_user(username,getUser)
+                    jdb.save()
+                    statInfo = infos.createStat(username,getUser,jdb.is_admin(username))
+                    bot.sendMessage(update.message.chat.id,statInfo, parse_mode='HTML')
+            except:
+                if user_info:
+                    user_info['proxy'] = ''
+                    statInfo = infos.createStat(username,user_info,jdb.is_admin(username))
+                    bot.sendMessage(update.message.chat.id,statInfo, parse_mode='HTML')
+            return
         if '/dir' in msgText:
             if not isadmin:
                 bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
@@ -1637,15 +1097,6 @@ def onmessage(update,bot:ObigramClient):
             # Obtener plataforma actual
             platform_name = get_platform_name(user_info.get('moodle_host', ''))
             
-            # Obtener estado del proxy
-            current_proxy = user_info.get('proxy', '')
-            current_proxy = clean_proxy_text(current_proxy)
-            proxy_status = f"┣⪼ 🔌 Proxy: <code>{current_proxy if current_proxy else 'Conexión directa'}</code>\n"
-            
-            # Obtener configuración de zips
-            user_zips = user_info.get('zips', 100)
-            zips_info = f"┣⪼ 📦 Compresión: {user_zips} MB\n"
-            
             # Mensaje según plataforma para duración de enlaces
             duration_info = ""
             if platform_name == 'CENED':
@@ -1658,17 +1109,12 @@ def onmessage(update,bot:ObigramClient):
 ┣⪼ 🚀 Subidas a Moodle/Cloud
 ┣⪼ 👨‍💻 Desarrollado por: @Eliel_21
 ┣⪼ 🏫 Plataforma: {platform_name}
-{proxy_status}{zips_info}{duration_info}┣⪼ 📤 Envía enlaces HTTP/HTTPS
+{duration_info}┣⪼ 📤 Envía enlaces HTTP/HTTPS
 
 ┣⪼ ⚙️ CONFIGURACIÓN RÁPIDA:
 ┣⪼ /moodle_eva - EVA
 ┣⪼ /moodle_cursos - CURSOS  
 ┣⪼ /moodle_cened - CENED
-
-┣⪼ 🔧 COMANDOS PROXY:
-┣⪼ /proxy - Configurar proxy
-┣⪼ /proxy_test - Probar proxy
-┣⪼ /proxy_clear - Conexión directa
 
 ┣⪼ 👥 GESTIÓN DE USUARIOS:
 ┣⪼ /adduserconfig - Agregar y configurar
@@ -1691,7 +1137,7 @@ def onmessage(update,bot:ObigramClient):
 ┣⪼ 🚀 Subidas a Moodle/Cloud
 ┣⪼ 👨‍💻 Desarrollado por: @Eliel_21
 ┣⪼ 🏫 Plataforma: {platform_name}
-{proxy_status}{zips_info}{duration_info}┣⪼ 📤 Envía enlaces HTTP/HTTPS
+{duration_info}┣⪼ 📤 Envía enlaces HTTP/HTTPS
 
 ┣⪼ 📝 COMANDOS DISPONIBLES:
 ┣⪼ /start - Información del bot
@@ -1699,7 +1145,7 @@ def onmessage(update,bot:ObigramClient):
 ╰━━━━━━━━━━━━━━━➣"""
             
             bot.deleteMessage(message.chat.id, message.message_id)
-            bot.sendMessage(update.message.chat.id, welcome_text, parse_mode='HTML')
+            bot.sendMessage(update.message.chat.id, welcome_text)
         elif '/files' == msgText and user_info['cloudtype']=='moodle':
              if not isadmin:
                 bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')

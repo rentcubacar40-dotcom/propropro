@@ -356,7 +356,7 @@ def clean_proxy_text(proxy_text):
 
 async def test_proxy_connection(user_info):
     """
-    Test REAL de conexión del proxy con medición de velocidad MEJORADA
+    Test MEJORADO de conexión del proxy con medición REAL de velocidad
     """
     results = {
         'success': False,
@@ -375,79 +375,133 @@ async def test_proxy_connection(user_info):
         if not proxy_url:
             results['success'] = True
             results['moodle_status'] = await test_moodle_direct(user_info)
+            # Medir velocidad directa
+            direct_speed = await test_download_speed(None)
+            results['download_speed'] = direct_speed
             return results
         
-        # Configurar sesión con proxy
+        # Configurar proxy
         proxy_config = ProxyCloud.parse(proxy_url)
-        timeout = aiohttp.ClientTimeout(total=30)
+        proxy_connector = None
         
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            # TEST 1: Latencia básica
-            start_time = time.time()
+        if proxy_config:
+            proxy_connector = aiohttp.TCPConnector(
+                proxy=proxy_config['url'],
+                verify_ssl=False,
+                limit=1
+            )
+        
+        # TEST 1: Latencia REAL
+        latency_results = []
+        for i in range(3):  # 3 intentos para promediar
             try:
-                async with session.get('http://httpbin.org/ip', 
-                                     proxy=proxy_config['url'] if proxy_config else None,
-                                     ssl=False) as response:
-                    results['latency'] = round((time.time() - start_time) * 1000, 2)
-                    results['success'] = response.status == 200
-            except Exception as e:
-                results['error'] = f"Error de latencia: {str(e)}"
-                return results
-            
-            # TEST 2: Conexión a Moodle
-            results['moodle_status'] = await test_moodle_with_proxy(user_info, proxy_config)
-            
-            # TEST 3: Velocidad de descarga MEJORADA
-            if results['success']:
-                try:
-                    # Usar un archivo de prueba más confiable
-                    test_url = 'http://speedtest.ftp.otenet.gr/files/test1Mb.db'
+                timeout = aiohttp.ClientTimeout(total=10)
+                async with aiohttp.ClientSession(timeout=timeout, connector=proxy_connector) as session:
                     start_time = time.time()
-                    
-                    async with session.get(test_url, 
-                                         proxy=proxy_config['url'] if proxy_config else None,
-                                         ssl=False) as response:
-                        total_downloaded = 0
-                        async for chunk in response.content.iter_chunked(8192):
-                            total_downloaded += len(chunk)
-                            # Descargar por máximo 10 segundos para mejor medición
-                            if time.time() - start_time >= 10:
-                                break
-                        
-                        download_time = time.time() - start_time
-                        if download_time > 0:
-                            # Convertir a KB/s y MB/s
-                            speed_kbs = (total_downloaded / download_time) / 1024
-                            results['download_speed'] = round(speed_kbs, 2)
-                            
-                except Exception as e:
-                    print(f"Error en test de velocidad: {e}")
-                    results['download_speed'] = 0
-            
+                    async with session.get('http://httpbin.org/delay/0', ssl=False) as response:
+                        if response.status == 200:
+                            latency = (time.time() - start_time) * 1000  # ms
+                            if latency < 30000:  # Filtrar latencias imposibles
+                                latency_results.append(latency)
+            except:
+                pass
+        
+        if latency_results:
+            results['latency'] = round(sum(latency_results) / len(latency_results), 2)
+            results['success'] = True
+        else:
+            results['error'] = "No se pudo medir la latencia"
+            return results
+        
+        # TEST 2: Velocidad de descarga MEJORADA
+        download_speed = await test_download_speed(proxy_connector)
+        results['download_speed'] = download_speed
+        
+        # TEST 3: Conexión a Moodle
+        results['moodle_status'] = await test_moodle_with_proxy(user_info, proxy_connector)
+        
         return results
         
     except Exception as e:
         results['error'] = f"Error general: {str(e)}"
         return results
 
-async def test_moodle_with_proxy(user_info, proxy_config):
+async def test_download_speed(connector):
+    """
+    Test MEJORADO de velocidad de descarga
+    """
+    try:
+        # Usar múltiples servidores de prueba
+        test_urls = [
+            'http://speedtest.ftp.otenet.gr/files/test1Mb.db',
+            'http://ipv4.download.thinkbroadband.com/1MB.zip',
+            'http://proof.ovh.net/files/1Mb.dat'
+        ]
+        
+        speeds = []
+        
+        for test_url in test_urls:
+            try:
+                timeout = aiohttp.ClientTimeout(total=15)
+                async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
+                    start_time = time.time()
+                    total_downloaded = 0
+                    
+                    async with session.get(test_url, ssl=False) as response:
+                        if response.status == 200:
+                            # Descargar por 5 segundos máximo
+                            async for chunk in response.content.iter_chunked(8192):
+                                total_downloaded += len(chunk)
+                                elapsed = time.time() - start_time
+                                if elapsed >= 5:  # 5 segundos de prueba
+                                    break
+                            
+                            if total_downloaded > 0 and elapsed > 0:
+                                speed_kbs = (total_downloaded / elapsed) / 1024
+                                if speed_kbs > 0:  # Solo agregar velocidades válidas
+                                    speeds.append(speed_kbs)
+                                    
+            except:
+                continue
+        
+        if speeds:
+            # Usar el promedio de las velocidades medidas
+            return round(sum(speeds) / len(speeds), 2)
+        else:
+            return 0
+            
+    except Exception as e:
+        print(f"Error en test de velocidad: {e}")
+        return 0
+
+async def test_moodle_with_proxy(user_info, connector):
     """Test de conexión a Moodle específicamente"""
     try:
-        timeout = aiohttp.ClientTimeout(total=15)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            # Intentar acceder a la página de login de Moodle
+        timeout = aiohttp.ClientTimeout(total=10)
+        async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
             moodle_host = user_info['moodle_host']
-            async with session.get(f"{moodle_host}/login/index.php", 
-                                 proxy=proxy_config['url'] if proxy_config else None,
-                                 ssl=False) as response:
-                return response.status == 200
+            # Intentar múltiples endpoints
+            endpoints = [
+                f"{moodle_host}/login/index.php",
+                f"{moodle_host}/",
+                f"{moodle_host}/my/"
+            ]
+            
+            for endpoint in endpoints:
+                try:
+                    async with session.get(endpoint, ssl=False) as response:
+                        if response.status == 200:
+                            return True
+                except:
+                    continue
+            return False
     except:
         return False
 
 async def test_moodle_direct(user_info):
     """Test de conexión directa a Moodle"""
     try:
-        timeout = aiohttp.ClientTimeout(total=15)
+        timeout = aiohttp.ClientTimeout(total=10)
         async with aiohttp.ClientSession(timeout=timeout) as session:
             moodle_host = user_info['moodle_host']
             async with session.get(f"{moodle_host}/login/index.php", ssl=False) as response:
@@ -826,8 +880,8 @@ def onmessage(update,bot:ObigramClient):
                 if not current_proxy:
                     bot.sendMessage(update.message.chat.id,
                         '<b>🔍 Estado de Conexión</b>\n\n'
-                        '<b>Proxy actual:</b> Conexión directa (sin proxy)\n'
-                        '<b>Estado:</b> ✅ Funcionando (si hay conexión a internet)\n\n'
+                        '<b>Proxy actual:</b> Conexión directa\n'
+                        '<b>Estado:</b> ✅ Conexión directa activa\n\n'
                         '<b>Usa /proxy para configurar un proxy</b>',
                         parse_mode='HTML'
                     )
@@ -842,14 +896,38 @@ def onmessage(update,bot:ObigramClient):
                 test_results = asyncio.run(test_proxy_connection(user_info))
                 
                 if test_results['success']:
-                    speed_icon = "⚡" if test_results['download_speed'] > 100 else "🐢"
+                    # Clasificar velocidad correctamente
+                    speed_kbs = test_results['download_speed']
+                    if speed_kbs > 1000:
+                        speed_display = f"{speed_kbs/1024:.2f} MB/s"
+                        speed_icon = "⚡"
+                    elif speed_kbs > 100:
+                        speed_display = f"{speed_kbs:.0f} KB/s"
+                        speed_icon = "🚀"
+                    elif speed_kbs > 10:
+                        speed_display = f"{speed_kbs:.0f} KB/s"
+                        speed_icon = "📶"
+                    else:
+                        speed_display = f"{speed_kbs:.2f} KB/s" if speed_kbs > 0 else "No medible"
+                        speed_icon = "🐢"
+                    
+                    # Clasificar latencia correctamente
+                    latency_ms = test_results['latency']
+                    if latency_ms < 100:
+                        latency_status = "🎯 Excelente"
+                    elif latency_ms < 300:
+                        latency_status = "✅ Buena"
+                    elif latency_ms < 1000:
+                        latency_status = "⚠️ Aceptable"
+                    else:
+                        latency_status = "🐢 Lenta"
+                    
                     moodle_icon = "✅" if test_results['moodle_status'] else "⚠️"
-                    speed_display = f"{test_results['download_speed']} KB/s" if test_results['download_speed'] > 0 else "No medible"
                     
                     bot.editMessageText(message,
                         f'<b>✅ Proxy FUNCIONANDO</b>\n\n'
                         f'<b>🔌 Proxy:</b> <code>{current_proxy}</code>\n'
-                        f'<b>📶 Latencia:</b> {test_results["latency"]} ms\n'
+                        f'<b>📶 Latencia:</b> {latency_ms} ms ({latency_status})\n'
                         f'<b>{speed_icon} Velocidad:</b> {speed_display}\n'
                         f'<b>{moodle_icon} Moodle:</b> {"Conectado" if test_results["moodle_status"] else "No accesible"}\n\n'
                         f'<b>Estado general:</b> ✅ Operativo',
@@ -978,8 +1056,17 @@ def onmessage(update,bot:ObigramClient):
                 
                 speed_info = ""
                 if test_results['download_speed'] > 0:
-                    speed_icon = "⚡" if test_results['download_speed'] > 100 else "📶"
-                    speed_info = f"\n<b>{speed_icon} Velocidad:</b> {test_results['download_speed']} KB/s"
+                    speed_kbs = test_results['download_speed']
+                    if speed_kbs > 1000:
+                        speed_display = f"{speed_kbs/1024:.2f} MB/s"
+                        speed_icon = "⚡"
+                    elif speed_kbs > 100:
+                        speed_display = f"{speed_kbs:.0f} KB/s"
+                        speed_icon = "🚀"
+                    else:
+                        speed_display = f"{speed_kbs:.0f} KB/s"
+                        speed_icon = "📶"
+                    speed_info = f"\n<b>{speed_icon} Velocidad:</b> {speed_display}"
                 
                 bot.editMessageText(message,
                     f'<b>✅ Proxy configurado</b>\n\n'

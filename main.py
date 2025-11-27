@@ -460,7 +460,7 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
                         file_display = f"{original_filename}"
                     
                     # Crear enlace HTML
-                    link = f"┣⪼ <a href='{f['directurl']}'>📎 {file_display}</a>\n"
+                    link = f"┣⪼ <a href='{f['directurl']}'>{file_display}</a>\n"
                     links_message += link
                 
                 links_message += "╰━━━━━━━━━━━━━━━➣"

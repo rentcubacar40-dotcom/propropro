@@ -23,6 +23,12 @@ import socket
 import S5Crypto
 import threading
 
+def truncate_filename(filename, max_length=40):
+    """Trunca el nombre del archivo y agrega ... si es muy largo (solo para mostrar)"""
+    if len(filename) <= max_length:
+        return filename
+    return filename[:max_length-3] + "..."
+
 def create_progress_bar(percentage, bars=15):
     """Crea barra de progreso estilo S1 con ⬢⬡"""
     filled = int(percentage / 100 * bars)
@@ -133,9 +139,9 @@ def uploadFile(filename,currentBits,totalBits,speed,time_elapsed,args):
         file_display = filename
         if part_info:
             current_part, total_parts, original_name = part_info
-            file_display = f"{original_name} (Parte {current_part}/{total_parts})"
+            file_display = f"{truncate_filename(original_name)} (Parte {current_part}/{total_parts})"
         elif originalfile:
-            file_display = originalfile
+            file_display = truncate_filename(originalfile)
         
         uploadingInfo = format_s1_message("📤 Subiendo", [
             f"[{progress_bar}]",
@@ -363,7 +369,7 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
         if thread and thread.getStore('stop'):
             return
             
-        # ACTUALIZAR ESTADÍSTICAS DE USUO
+        # ACTUALIZAR ESTADÍSTICAS DE USUARIO
         try:
             file_size_mb = file_size / (1024 * 1024)
             current_total = getUser.get('total_mb_used', 0)
@@ -414,7 +420,7 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
                     files[i]['directurl'] = url.replace('://eva.uo.edu.cu/', '://eva.uo.edu.cu/webservice/')
                 
                 # Para CURSOS UO - agregar webservice  
-                elif 'cursos.uo.edu.cu' in url and '/webservice/' not in url:
+                elif 'cursos.uo.edu.cu' en url and '/webservice/' not in url:
                     files[i]['directurl'] = url.replace('://cursos.uo.edu.cu/', '://cursos.uo.edu.cu/webservice/')
 
             bot.deleteMessage(message.chat.id,message.message_id)
@@ -426,9 +432,12 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
             platform_name = get_platform_name(getUser['moodle_host'])
             finish_title = "✅ Subida Completada"
             
+            # Mostrar nombre truncado en el mensaje
+            display_filename = truncate_filename(original_filename)
+            
             if platform_name == 'CENED':
                 finishInfo = format_s1_message(finish_title, [
-                    f"📄 Archivo: {original_filename}",
+                    f"📄 Archivo: {display_filename}",
                     f"📦 Tamaño total: {sizeof_fmt(file_size)}",
                     f"🔗 Enlaces generados: {len(files)}",
                     f"⏱️ Duración enlaces: 8-30 minutos",
@@ -436,7 +445,7 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
                 ])
             else:
                 finishInfo = format_s1_message(finish_title, [
-                    f"📄 Archivo: {original_filename}",
+                    f"📄 Archivo: {display_filename}",
                     f"📦 Tamaño total: {sizeof_fmt(file_size)}",
                     f"🔗 Enlaces generados: {len(files)}",
                     f"⏱️ Duración enlaces: 3 días",
@@ -446,8 +455,17 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
             bot.sendMessage(message.chat.id, finishInfo)
             
             if len(files) > 0:
-                filesInfo = infos.createFileMsg(original_filename,files)
-                bot.sendMessage(message.chat.id, filesInfo, parse_mode='html')
+                # Crear mensaje con enlaces clickeables y nombres truncados
+                filesInfo = f"<b>🔗 Enlaces de Descarga:</b>\n\n"
+                for i, f in enumerate(files, 1):
+                    url = f['directurl']
+                    name = f['name']
+                    display_name = truncate_filename(name)
+                    filesInfo += f"<b>📎 Parte {i}:</b> <a href='{url}'>{display_name}</a>\n\n"
+                
+                filesInfo += "<i>💡 Los enlaces también están disponibles en el archivo TXT</i>"
+                bot.sendMessage(message.chat.id, filesInfo, parse_mode='HTML')
+                
                 txtname = base_name + '.txt'
                 sendTxt(txtname,files,update,bot)
     except Exception as ex:
@@ -501,10 +519,13 @@ def megadl(update,bot,message,megaurl,file_name='',thread=None,jdb=None):
 
 def sendTxt(name,files,update,bot):
     try:
-        # SOLO ENLACES EN EL TXT - SIN INFORMACIÓN ADICIONAL
+        # ENLACES SEPARADOS POR LÍNEA EN BLANCO EN EL TXT (nombres originales completos)
         with open(name, 'w', encoding='utf-8') as txt:
-            for f in files:
-                txt.write(f"{f['directurl']}\n")
+            for i, f in enumerate(files):
+                txt.write(f"{f['directurl']}")
+                # Agregar línea en blanco después de cada enlace, excepto el último
+                if i < len(files) - 1:
+                    txt.write("\n\n")
         
         info_msg = f"""<b>📄 Archivo de enlaces generado</b>
 

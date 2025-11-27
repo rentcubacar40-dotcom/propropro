@@ -316,12 +316,13 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
             compresingInfo = infos.createCompresing(file,file_size,max_file_size)
             bot.editMessageText(message,compresingInfo)
             
-            # COMPRESIÓN NATIVA - LECTURA POR CHUNKS
-            zip_files = []
+            # COMPRESIÓN CON 7Z - SIN PROGRESO EN TIEMPO REAL
+            import subprocess
+            seven_zip_files = []
             part_number = 1
             
             try:
-                # Calcular número total de partes para mostrar progreso
+                # Calcular número total de partes
                 total_parts = (file_size + max_file_size - 1) // max_file_size
                 
                 with open(file, 'rb') as original_file:
@@ -334,26 +335,36 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
                         if not chunk:
                             break
                         
-                        # Actualizar información de compresión
-                        current_progress = (part_number - 1) / total_parts * 100
-                        progress_bar = create_progress_bar(current_progress, 15)
-                        compresingInfo = format_s1_message("📚 Comprimiendo...", [
-                            f"🔖 Nombre: {original_filename}",
-                            f"📦 Progreso: [{progress_bar}] {current_progress:.1f}%",
-                            f"🗂 Parte {part_number} de {total_parts}",
-                            f"🚫 Cancelar: /cancel_{thread.cancel_id}" if hasattr(thread, 'cancel_id') else ""
-                        ])
-                        bot.editMessageText(message, compresingInfo)
+                        # Crear archivo temporal para esta parte
+                        temp_part = f"{base_name}_part{part_number}.tmp"
+                        with open(temp_part, 'wb') as temp_file:
+                            temp_file.write(chunk)
                         
-                        # Crear nombre de archivo ZIP para esta parte
-                        zip_filename = f"{base_name}_part{part_number}.zip"
+                        # Crear nombre de archivo 7z para esta parte
+                        seven_zip_filename = f"{base_name}_part{part_number}.7z"
                         
-                        # Crear archivo ZIP para esta parte
-                        with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
-                            # Agregar el chunk como el archivo original
-                            zipf.writestr(original_filename, chunk)
+                        # Comprimir con 7z usando subprocess
+                        try:
+                            # Comando 7z: comprimir el archivo temporal
+                            cmd = ['7z', 'a', '-t7z', '-m0=lzma2', '-mx=9', seven_zip_filename, temp_part]
+                            subprocess.run(cmd, check=True, capture_output=True)
+                            
+                            # Verificar que el archivo 7z se creó correctamente
+                            if os.path.exists(seven_zip_filename):
+                                seven_zip_files.append(seven_zip_filename)
+                            else:
+                                raise Exception(f"No se pudo crear {seven_zip_filename}")
+                                
+                        except subprocess.CalledProcessError as e:
+                            raise Exception(f"Error en compresión 7z: {e.stderr.decode()}")
                         
-                        zip_files.append(zip_filename)
+                        finally:
+                            # Limpiar archivo temporal
+                            try:
+                                if os.path.exists(temp_part):
+                                    os.unlink(temp_part)
+                            except: pass
+                        
                         part_number += 1
                 
                 # Actualizar mensaje final de compresión
@@ -361,33 +372,34 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
                     f"🔖 Nombre: {original_filename}",
                     f"🗂 Tamaño Total: {sizeof_fmt(file_size)}",
                     f"📂 Tamaño Partes: {sizeof_fmt(max_file_size)}",
-                    f"💾 Cantidad Partes: {len(zip_files)}"
+                    f"💾 Cantidad Partes: {len(seven_zip_files)}",
+                    f"📦 Formato: 7z"
                 ])
                 bot.editMessageText(message, compresingInfo)
                 
             except Exception as compression_error:
                 print(f"Error en compresión: {compression_error}")
                 # Limpiar archivos temporales en caso de error
-                for zip_file in zip_files:
+                for seven_zip_file in seven_zip_files:
                     try:
-                        if os.path.exists(zip_file):
-                            os.unlink(zip_file)
+                        if os.path.exists(seven_zip_file):
+                            os.unlink(seven_zip_file)
                     except: pass
                 raise compression_error
             
             # Usar el nombre base original para la subida
-            client = processUploadFiles(original_filename, file_size, zip_files, update, bot, message, thread=thread, jdb=jdb)
+            client = processUploadFiles(original_filename, file_size, seven_zip_files, update, bot, message, thread=thread, jdb=jdb)
             
             try:
                 os.unlink(file)
             except:pass
-            file_upload_count = len(zip_files)
+            file_upload_count = len(seven_zip_files)
             
-            # LIMPIAR ARCHIVOS TEMPORALES ZIP después de subir
+            # LIMPIAR ARCHIVOS TEMPORALES 7z después de subir
             try:
-                for zip_file in zip_files:
-                    if os.path.exists(zip_file):
-                        os.unlink(zip_file)
+                for seven_zip_file in seven_zip_files:
+                    if os.path.exists(seven_zip_file):
+                        os.unlink(seven_zip_file)
             except:pass
                         
         else:
@@ -492,7 +504,8 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
                     f"📦 Tamaño total: {sizeof_fmt(file_size)}",
                     f"🔗 Enlaces generados: {len(files)}",
                     f"⏱️ Duración enlaces: 8-30 minutos",
-                    f"💾 Partes: {total_parts}" if total_parts > 1 else "💾 Archivo único"
+                    f"💾 Partes: {total_parts}" if total_parts > 1 else "💾 Archivo único",
+                    f"📦 Formato: 7z" if total_parts > 1 else ""
                 ])
             else:
                 finishInfo = format_s1_message(finish_title, [
@@ -500,7 +513,8 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
                     f"📦 Tamaño total: {sizeof_fmt(file_size)}",
                     f"🔗 Enlaces generados: {len(files)}",
                     f"⏱️ Duración enlaces: 3 días",
-                    f"💾 Partes: {total_parts}" if total_parts > 1 else "💾 Archivo único"
+                    f"💾 Partes: {total_parts}" if total_parts > 1 else "💾 Archivo único",
+                    f"📦 Formato: 7z" if total_parts > 1 else ""
                 ])
             
             bot.sendMessage(message.chat.id, finishInfo)

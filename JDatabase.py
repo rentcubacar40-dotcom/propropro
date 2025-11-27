@@ -37,7 +37,13 @@ class JsonDatabase(object):
                      'zips': 100,
                      'uploadtype':'draft',
                      'proxy':'',
-                     'tokenize':0}
+                     'tokenize':0,
+                     # NUEVOS CAMPOS PARA ESTADÍSTICAS
+                     'total_mb_used': 0,
+                     'upload_count': 0,
+                     'first_upload': '',
+                     'last_upload': '',
+                     'last_activity': ''}
 
     def create_admin(self,name):
         self.items[name] = {'dir': '',
@@ -50,7 +56,13 @@ class JsonDatabase(object):
                      'zips': 100,
                      'uploadtype':'draft',
                      'proxy':'',
-                     'tokenize':0}
+                     'tokenize':0,
+                     # NUEVOS CAMPOS PARA ESTADÍSTICAS
+                     'total_mb_used': 0,
+                     'upload_count': 0,
+                     'first_upload': '',
+                     'last_upload': '',
+                     'last_activity': ''}
 
     def remove(self,name):
         try:
@@ -83,11 +95,3 @@ class JsonDatabase(object):
             data = json.loads(str(tokens[1]).replace("'", '"'))
 
             self.items[user] = data
-
-
-
-
-
-
-
-

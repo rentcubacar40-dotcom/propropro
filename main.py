@@ -448,7 +448,7 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
             # ENVIAR ENLACES CLICKEABLES EN AZUL
             if len(files) > 0:
                 # Crear mensaje con enlaces en HTML para que sean clickeables
-                links_message = "╭━━━━❰🔗 Enlaces❱━➣\n"
+                links_message = "╭━━━━❰ Enlaces ❱━➣\n"
                 
                 for i, f in enumerate(files, 1):
                     # Determinar qué nombre mostrar

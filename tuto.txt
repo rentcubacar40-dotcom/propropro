@@ -17,17 +17,15 @@
 ┣⪼ • EVA/CURSOS: 3 días
 
 ┣⪼ 💾 LÍMITES:
-┣⪼ • Archivos grandes se dividen
-┣⪼ • Compresión automática
-┣⪼ • Múltiples partes si es necesario
+┣⪼ • Archivos grandes se dividen automáticamente
+┣⪼ • Compresión automática si es necesario
+┣⪼ • Múltiples partes para archivos grandes
 
-┣⪼ 📋 COMANDOS:
-┣⪼ • /start - Información del bot
-┣⪼ • /tutorial - Guía de uso completo
-┣⪼ • Enlaces HTTP/HTTPS - Subir archivos
-
-┣⪼ ⚠️ NOTAS:
-┣⪼ • Solo enlaces directos
-┣⪼ • No requiere configuración
+┣⪼ ⚠️ INFORMACIÓN IMPORTANTE:
+┣⪼ • Solo enlaces directos HTTP/HTTPS
 ┣⪼ • Proceso completamente automático
+┣⪼ • Enlaces son temporales
+┣⪼ • Estadísticas se reinician en cada actualización
+┣⪼ • Acceso requiere reactivación después de reinicios
+┣⪼ • Contacta al administrador si pierdes acceso
 ╰━━━━━━━━━━━━━━━➣

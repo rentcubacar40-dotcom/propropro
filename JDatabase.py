@@ -29,7 +29,7 @@ class JsonDatabase(object):
     def create_user(self,name):
         self.items[name] = {
             'dir': '',
-            'cloudtype': 'moodle', 
+            'cloudtype': 'moodle',
             'moodle_host': '',
             'moodle_repo_id': 4,
             'moodle_user': '',
@@ -39,7 +39,7 @@ class JsonDatabase(object):
             'uploadtype':'draft',
             'proxy':'',
             'tokenize':0,
-            # ✅ CAMPOS NUEVOS - SOLO para usuarios NUEVOS
+            # ✅ CAMPOS NUEVOS PARA ESTADÍSTICAS
             'total_mb_used': 0,
             'upload_count': 0,
             'last_upload': '',
@@ -59,7 +59,7 @@ class JsonDatabase(object):
             'uploadtype':'draft',
             'proxy':'',
             'tokenize':0,
-            # ✅ CAMPOS NUEVOS - SOLO para administradores NUEVOS  
+            # ✅ CAMPOS NUEVOS PARA ESTADÍSTICAS
             'total_mb_used': 0,
             'upload_count': 0,
             'last_upload': '',
@@ -95,7 +95,6 @@ class JsonDatabase(object):
             tokens = lin.split('=')
             user = tokens[0]
             data = json.loads(str(tokens[1]).replace("'", '"'))
-            # ✅ NO HACE FALTA MIGRACIÓN - Los campos se agregarán automáticamente
             self.items[user] = data
 
     def get_all_users(self):

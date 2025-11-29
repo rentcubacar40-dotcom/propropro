@@ -870,7 +870,7 @@ def onmessage(update,bot:ObigramClient):
                 bot.sendMessage(update.message.chat.id,'<b>❌ No tiene permisos de administrador</b>', parse_mode='HTML')
             return
 
-        # NUEVOS COMANDOS DE MENSAJERÍA PARA ADMIN (CON CHAT IDs)
+        # NUEVOS COMANDOS DE MENSAJERÍA PARA ADMIN (CON MANEJO DE ERRORES ROBUSTO)
         if '/msg_all' in msgText and isadmin:
             try:
                 # Extraer el mensaje
@@ -895,6 +895,12 @@ def onmessage(update,bot:ObigramClient):
                 # Enviar mensaje a cada usuario usando Chat ID
                 for username, user_data in all_users_data.items():
                     try:
+                        # ✅ MANEJO SEGURO: Verificar si user_data es válido
+                        if not user_data or not isinstance(user_data, dict):
+                            failed_sends += 1
+                            failed_usernames.append(f"@{username} (datos inválidos)")
+                            continue
+                            
                         chat_id = user_data.get('chat_id')
                         if chat_id:
                             # Formato del mensaje para usuarios
@@ -908,7 +914,7 @@ def onmessage(update,bot:ObigramClient):
                     except Exception as e:
                         failed_sends += 1
                         failed_usernames.append(f"@{username} (error)")
-                        print(f"Error enviando mensaje a {username} (Chat ID: {user_data.get('chat_id')}): {e}")
+                        print(f"Error enviando mensaje a {username}: {e}")
                 
                 # Eliminar mensaje de progreso
                 bot.deleteMessage(progress_msg.chat.id, progress_msg.message_id)
@@ -930,7 +936,7 @@ def onmessage(update,bot:ObigramClient):
             except Exception as e:
                 print(f"Error en msg_all: {e}")
                 bot.sendMessage(update.message.chat.id,
-                               '<b>❌ Error en el comando</b>\n'
+                               f'<b>❌ Error en el comando</b>\n<code>{str(e)}</code>\n'
                                '<b>Formato:</b> <code>/msg_all tu mensaje aquí</code>',
                                parse_mode='HTML')
             return
@@ -960,8 +966,16 @@ def onmessage(update,bot:ObigramClient):
                                    parse_mode='HTML')
                     return
                 
-                # Enviar mensaje al usuario específico usando Chat ID
+                # ✅ MANEJO SEGURO: Obtener datos del usuario
                 target_user_data = jdb.items[target_user]
+                if not target_user_data or not isinstance(target_user_data, dict):
+                    bot.sendMessage(update.message.chat.id,
+                                   f'<b>❌ Datos de usuario inválidos</b>\n'
+                                   f'<b>Usuario:</b> @{target_user}',
+                                   parse_mode='HTML')
+                    return
+                
+                # Enviar mensaje al usuario específico usando Chat ID
                 chat_id = target_user_data.get('chat_id')
                 
                 if not chat_id:
@@ -995,16 +1009,21 @@ def onmessage(update,bot:ObigramClient):
             except Exception as e:
                 print(f"Error en msg: {e}")
                 bot.sendMessage(update.message.chat.id,
-                               '<b>❌ Error en el comando</b>\n'
+                               f'<b>❌ Error en el comando</b>\n<code>{str(e)}</code>\n'
                                '<b>Formato:</b> <code>/msg @usuario tu mensaje aquí</code>',
                                parse_mode='HTML')
             return
 
-        # COMANDO PARA VER CHAT IDs
+        # COMANDO PARA VER CHAT IDs (SEGURO)
         if '/debug_chatids' in msgText and isadmin:
             try:
                 users_info = []
                 for username, user_data in jdb.items.items():
+                    # ✅ MANEJO SEGURO: Verificar datos del usuario
+                    if not user_data or not isinstance(user_data, dict):
+                        users_info.append(f"@{username} - ❌ DATOS INVÁLIDOS")
+                        continue
+                    
                     chat_id = user_data.get('chat_id', 'NO TIENE')
                     users_info.append(f"@{username} - Chat ID: {chat_id}")
                 

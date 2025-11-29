@@ -608,7 +608,6 @@ def onmessage(update,bot:ObigramClient):
     try:
         thread = bot.this_thread
         username = update.message.sender.username
-        chat_id = update.message.chat.id  # ✅ Obtener Chat ID
         tl_admin_user = os.environ.get('tl_admin_user','Eliel_21')
 
         jdb = JsonDatabase('database')
@@ -620,7 +619,7 @@ def onmessage(update,bot:ObigramClient):
         if username == tl_admin_user or tl_admin_user=='*' or user_info:
             if user_info is None:
                 if username == tl_admin_user:
-                    jdb.create_admin(username, chat_id)  # ✅ Guardar Chat ID para admin
+                    jdb.create_admin(username)
                 else:
                     # Usuarios normales no se crean automáticamente, deben ser agregados por admin
                     bot.sendMessage(update.message.chat.id,
@@ -641,12 +640,6 @@ def onmessage(update,bot:ObigramClient):
                            f"👤 @{tl_admin_user}",
                            parse_mode='HTML')
             return
-
-        # ✅ ACTUALIZAR Chat ID si el usuario ya existe (para usuarios existentes)
-        if user_info and user_info.get('chat_id') != chat_id:
-            user_info['chat_id'] = chat_id
-            jdb.save_data_user(username, user_info)
-            jdb.save()
 
         msgText = ''
         try: 
@@ -810,7 +803,7 @@ def onmessage(update,bot:ObigramClient):
                             existing_users.append(target_user)
                             continue
                         
-                        # Crear usuario nuevo (sin chat_id inicialmente)
+                        # Crear usuario nuevo
                         jdb.create_user(username_clean)
                         
                         # Obtener y configurar usuario
@@ -825,7 +818,6 @@ def onmessage(update,bot:ObigramClient):
                         new_user_info['tokenize'] = 0
                         new_user_info['proxy'] = ''
                         new_user_info['dir'] = '/'
-                        # chat_id se establecerá cuando el usuario escriba al bot
                         
                         jdb.save_data_user(username_clean, new_user_info)
                         configured_users.append(target_user)
@@ -870,180 +862,12 @@ def onmessage(update,bot:ObigramClient):
                 bot.sendMessage(update.message.chat.id,'<b>❌ No tiene permisos de administrador</b>', parse_mode='HTML')
             return
 
-        # NUEVOS COMANDOS DE MENSAJERÍA PARA ADMIN (CON MANEJO DE ERRORES ROBUSTO)
-        if '/msg_all' in msgText and isadmin:
-            try:
-                # Extraer el mensaje
-                message_text = str(msgText).split(' ', 1)[1].strip()
-                if not message_text:
-                    bot.sendMessage(update.message.chat.id,
-                                   '<b>❌ Error:</b> Debes escribir un mensaje\n'
-                                   '<b>Formato:</b> <code>/msg_all tu mensaje aquí</code>',
-                                   parse_mode='HTML')
-                    return
-                
-                # Obtener todos los usuarios desde jdb.items
-                all_users_data = jdb.items
-                total_users = len(all_users_data)
-                successful_sends = 0
-                failed_sends = 0
-                failed_usernames = []
-                
-                # Mostrar mensaje de progreso
-                progress_msg = bot.sendMessage(update.message.chat.id, f'<b>📤 Enviando mensaje a {total_users} usuarios...</b>', parse_mode='HTML')
-                
-                # Enviar mensaje a cada usuario usando Chat ID
-                for username, user_data in all_users_data.items():
-                    try:
-                        # ✅ MANEJO SEGURO: Verificar si user_data es válido
-                        if not user_data or not isinstance(user_data, dict):
-                            failed_sends += 1
-                            failed_usernames.append(f"@{username} (datos inválidos)")
-                            continue
-                            
-                        chat_id = user_data.get('chat_id')
-                        if chat_id:
-                            # Formato del mensaje para usuarios
-                            user_message = f"📢 Mensaje del Administrador:\n\n{message_text}\n\n---\n🤖 Bot de Moodle"
-                            bot.sendMessage(chat_id, user_message)
-                            successful_sends += 1
-                        else:
-                            failed_sends += 1
-                            failed_usernames.append(f"@{username} (sin chat_id)")
-                            
-                    except Exception as e:
-                        failed_sends += 1
-                        failed_usernames.append(f"@{username} (error)")
-                        print(f"Error enviando mensaje a {username}: {e}")
-                
-                # Eliminar mensaje de progreso
-                bot.deleteMessage(progress_msg.chat.id, progress_msg.message_id)
-                
-                # Reportar resultados al admin
-                result_message = format_s1_message("📢 Resultado de Envío Masivo", [
-                    f"✅ Enviados: {successful_sends} usuarios",
-                    f"❌ Fallidos: {failed_sends} usuarios", 
-                    f"📊 Total: {total_users} usuarios"
-                ])
-                
-                if failed_sends > 0:
-                    result_message += f"\n\n<b>Usuarios con error:</b>\n" + ", ".join(failed_usernames[:10])
-                    if len(failed_usernames) > 10:
-                        result_message += f" ... y {len(failed_usernames) - 10} más"
-                
-                bot.sendMessage(update.message.chat.id, result_message, parse_mode='HTML')
-                
-            except Exception as e:
-                print(f"Error en msg_all: {e}")
-                bot.sendMessage(update.message.chat.id,
-                               f'<b>❌ Error en el comando</b>\n<code>{str(e)}</code>\n'
-                               '<b>Formato:</b> <code>/msg_all tu mensaje aquí</code>',
-                               parse_mode='HTML')
-            return
-
-        if '/msg' in msgText and isadmin and not '/msg_all' in msgText:
-            try:
-                # Extraer usuario y mensaje: /msg @usuario mensaje
-                parts = str(msgText).split(' ', 2)
-                if len(parts) < 3:
-                    bot.sendMessage(update.message.chat.id,
-                                   '<b>❌ Formato incorrecto</b>\n\n'
-                                   '<b>Formato:</b> <code>/msg @usuario tu mensaje aquí</code>\n\n'
-                                   '<b>Ejemplo:</b>\n'
-                                   '<code>/msg @juan Tu cuenta ha sido actualizada</code>',
-                                   parse_mode='HTML')
-                    return
-                
-                target_user = parts[1].replace('@', '')  # Remover @ si está presente
-                message_text = parts[2].strip()
-                
-                # Verificar que el usuario existe en jdb.items
-                if target_user not in jdb.items:
-                    bot.sendMessage(update.message.chat.id,
-                                   f'<b>❌ Usuario no encontrado</b>\n'
-                                   f'<b>Usuario:</b> @{target_user}\n'
-                                   f'<b>Nota:</b> El usuario debe estar registrado en el bot',
-                                   parse_mode='HTML')
-                    return
-                
-                # ✅ MANEJO SEGURO: Obtener datos del usuario
-                target_user_data = jdb.items[target_user]
-                if not target_user_data or not isinstance(target_user_data, dict):
-                    bot.sendMessage(update.message.chat.id,
-                                   f'<b>❌ Datos de usuario inválidos</b>\n'
-                                   f'<b>Usuario:</b> @{target_user}',
-                                   parse_mode='HTML')
-                    return
-                
-                # Enviar mensaje al usuario específico usando Chat ID
-                chat_id = target_user_data.get('chat_id')
-                
-                if not chat_id:
-                    bot.sendMessage(update.message.chat.id,
-                                   f'<b>❌ Usuario sin Chat ID</b>\n'
-                                   f'<b>Usuario:</b> @{target_user}\n'
-                                   f'<b>Solución:</b> El usuario debe escribir al bot primero',
-                                   parse_mode='HTML')
-                    return
-                
-                try:
-                    user_message = f"📢 Mensaje del Administrador:\n\n{message_text}\n\n---\n🤖 Bot de Moodle"
-                    bot.sendMessage(chat_id, user_message)
-                    
-                    # Confirmar envío al admin
-                    confirm_message = format_s1_message("✅ Mensaje Enviado", [
-                        f"👤 Usuario: @{target_user}",
-                        f"🆔 Chat ID: {chat_id}",
-                        f"📝 Mensaje: {message_text}"
-                    ])
-                    bot.sendMessage(update.message.chat.id, confirm_message)
-                    
-                except Exception as e:
-                    bot.sendMessage(update.message.chat.id,
-                                   f'<b>❌ Error enviando mensaje</b>\n'
-                                   f'<b>Usuario:</b> @{target_user}\n'
-                                   f'<b>Chat ID:</b> {chat_id}\n'
-                                   f'<b>Error:</b> {str(e)}',
-                                   parse_mode='HTML')
-                
-            except Exception as e:
-                print(f"Error en msg: {e}")
-                bot.sendMessage(update.message.chat.id,
-                               f'<b>❌ Error en el comando</b>\n<code>{str(e)}</code>\n'
-                               '<b>Formato:</b> <code>/msg @usuario tu mensaje aquí</code>',
-                               parse_mode='HTML')
-            return
-
-        # COMANDO PARA VER CHAT IDs (SEGURO)
-        if '/debug_chatids' in msgText and isadmin:
-            try:
-                users_info = []
-                for username, user_data in jdb.items.items():
-                    # ✅ MANEJO SEGURO: Verificar datos del usuario
-                    if not user_data or not isinstance(user_data, dict):
-                        users_info.append(f"@{username} - ❌ DATOS INVÁLIDOS")
-                        continue
-                    
-                    chat_id = user_data.get('chat_id', 'NO TIENE')
-                    users_info.append(f"@{username} - Chat ID: {chat_id}")
-                
-                debug_msg = "👥 **USUARIOS Y CHAT IDs:**\n\n" + "\n".join(users_info[:15])
-                if len(users_info) > 15:
-                    debug_msg += f"\n\n... y {len(users_info) - 15} más"
-                
-                bot.sendMessage(update.message.chat.id, debug_msg, parse_mode='HTML')
-                
-            except Exception as e:
-                bot.sendMessage(update.message.chat.id, f'❌ Error: {str(e)}')
-            return
-
         # BLOQUEAR COMANDOS DE ADMIN PARA USUARIOS NORMALES
         if not isadmin and is_text and any(cmd in msgText for cmd in [
             '/zips', '/account', '/host', '/repoid', '/tokenize', 
             '/cloud', '/uptype', '/proxy', '/dir', '/myuser', 
             '/files', '/txt_', '/del_', '/delall', '/adduserconfig', 
-            '/banuser', '/getdb', '/moodle_eva', '/moodle_cursos', '/moodle_cened', '/moodle_instec',
-            '/msg_all', '/msg', '/debug_chatids'
+            '/banuser', '/getdb', '/moodle_eva', '/moodle_cursos', '/moodle_cened', '/moodle_instec'
         ]):
             bot.sendMessage(update.message.chat.id,
                            "<b>🚫 Acceso Restringido</b>\n\n"
@@ -1390,9 +1214,6 @@ def onmessage(update,bot:ObigramClient):
 ┣⪼ /adduserconfig - Agregar y configurar
 ┣⪼ /banuser - Eliminar usuario(s)
 ┣⪼ /getdb - Base de datos
-┣⪼ /msg_all - Mensaje a todos
-┣⪼ /msg - Mensaje individual
-┣⪼ /debug_chatids - Ver Chat IDs
 
 ┣⪼ ⚡ CONFIGURACIÓN AVANZADA:
 ┣⪼ /myuser - Mi configuración

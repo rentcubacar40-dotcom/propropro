@@ -608,6 +608,7 @@ def onmessage(update,bot:ObigramClient):
     try:
         thread = bot.this_thread
         username = update.message.sender.username
+        chat_id = update.message.chat.id  # ✅ Obtener Chat ID
         tl_admin_user = os.environ.get('tl_admin_user','Eliel_21')
 
         jdb = JsonDatabase('database')
@@ -619,7 +620,7 @@ def onmessage(update,bot:ObigramClient):
         if username == tl_admin_user or tl_admin_user=='*' or user_info:
             if user_info is None:
                 if username == tl_admin_user:
-                    jdb.create_admin(username)
+                    jdb.create_admin(username, chat_id)  # ✅ Guardar Chat ID para admin
                 else:
                     # Usuarios normales no se crean automáticamente, deben ser agregados por admin
                     bot.sendMessage(update.message.chat.id,
@@ -640,6 +641,12 @@ def onmessage(update,bot:ObigramClient):
                            f"👤 @{tl_admin_user}",
                            parse_mode='HTML')
             return
+
+        # ✅ ACTUALIZAR Chat ID si el usuario ya existe (para usuarios existentes)
+        if user_info and user_info.get('chat_id') != chat_id:
+            user_info['chat_id'] = chat_id
+            jdb.save_data_user(username, user_info)
+            jdb.save()
 
         msgText = ''
         try: 
@@ -803,7 +810,7 @@ def onmessage(update,bot:ObigramClient):
                             existing_users.append(target_user)
                             continue
                         
-                        # Crear usuario nuevo
+                        # Crear usuario nuevo (sin chat_id inicialmente)
                         jdb.create_user(username_clean)
                         
                         # Obtener y configurar usuario
@@ -818,6 +825,7 @@ def onmessage(update,bot:ObigramClient):
                         new_user_info['tokenize'] = 0
                         new_user_info['proxy'] = ''
                         new_user_info['dir'] = '/'
+                        # chat_id se establecerá cuando el usuario escriba al bot
                         
                         jdb.save_data_user(username_clean, new_user_info)
                         configured_users.append(target_user)
@@ -862,7 +870,7 @@ def onmessage(update,bot:ObigramClient):
                 bot.sendMessage(update.message.chat.id,'<b>❌ No tiene permisos de administrador</b>', parse_mode='HTML')
             return
 
-        # NUEVOS COMANDOS DE MENSAJERÍA PARA ADMIN
+        # NUEVOS COMANDOS DE MENSAJERÍA PARA ADMIN (CON CHAT IDs)
         if '/msg_all' in msgText and isadmin:
             try:
                 # Extraer el mensaje
@@ -884,17 +892,23 @@ def onmessage(update,bot:ObigramClient):
                 # Mostrar mensaje de progreso
                 progress_msg = bot.sendMessage(update.message.chat.id, f'<b>📤 Enviando mensaje a {total_users} usuarios...</b>', parse_mode='HTML')
                 
-                # Enviar mensaje a cada usuario
+                # Enviar mensaje a cada usuario usando Chat ID
                 for username, user_data in all_users_data.items():
                     try:
-                        # Formato del mensaje para usuarios
-                        user_message = f"📢 Mensaje del Administrador:\n\n{message_text}\n\n---\n🤖 Bot de Moodle"
-                        bot.sendMessage(username, user_message)
-                        successful_sends += 1
+                        chat_id = user_data.get('chat_id')
+                        if chat_id:
+                            # Formato del mensaje para usuarios
+                            user_message = f"📢 Mensaje del Administrador:\n\n{message_text}\n\n---\n🤖 Bot de Moodle"
+                            bot.sendMessage(chat_id, user_message)
+                            successful_sends += 1
+                        else:
+                            failed_sends += 1
+                            failed_usernames.append(f"@{username} (sin chat_id)")
+                            
                     except Exception as e:
                         failed_sends += 1
-                        failed_usernames.append(username)
-                        print(f"Error enviando mensaje a {username}: {e}")
+                        failed_usernames.append(f"@{username} (error)")
+                        print(f"Error enviando mensaje a {username} (Chat ID: {user_data.get('chat_id')}): {e}")
                 
                 # Eliminar mensaje de progreso
                 bot.deleteMessage(progress_msg.chat.id, progress_msg.message_id)
@@ -907,7 +921,7 @@ def onmessage(update,bot:ObigramClient):
                 ])
                 
                 if failed_sends > 0:
-                    result_message += f"\n\n<b>Usuarios con error:</b>\n" + ", ".join(failed_usernames[:10])  # Mostrar solo primeros 10
+                    result_message += f"\n\n<b>Usuarios con error:</b>\n" + ", ".join(failed_usernames[:10])
                     if len(failed_usernames) > 10:
                         result_message += f" ... y {len(failed_usernames) - 10} más"
                 
@@ -946,14 +960,26 @@ def onmessage(update,bot:ObigramClient):
                                    parse_mode='HTML')
                     return
                 
-                # Enviar mensaje al usuario específico
+                # Enviar mensaje al usuario específico usando Chat ID
+                target_user_data = jdb.items[target_user]
+                chat_id = target_user_data.get('chat_id')
+                
+                if not chat_id:
+                    bot.sendMessage(update.message.chat.id,
+                                   f'<b>❌ Usuario sin Chat ID</b>\n'
+                                   f'<b>Usuario:</b> @{target_user}\n'
+                                   f'<b>Solución:</b> El usuario debe escribir al bot primero',
+                                   parse_mode='HTML')
+                    return
+                
                 try:
                     user_message = f"📢 Mensaje del Administrador:\n\n{message_text}\n\n---\n🤖 Bot de Moodle"
-                    bot.sendMessage(target_user, user_message)
+                    bot.sendMessage(chat_id, user_message)
                     
                     # Confirmar envío al admin
                     confirm_message = format_s1_message("✅ Mensaje Enviado", [
                         f"👤 Usuario: @{target_user}",
+                        f"🆔 Chat ID: {chat_id}",
                         f"📝 Mensaje: {message_text}"
                     ])
                     bot.sendMessage(update.message.chat.id, confirm_message)
@@ -962,6 +988,7 @@ def onmessage(update,bot:ObigramClient):
                     bot.sendMessage(update.message.chat.id,
                                    f'<b>❌ Error enviando mensaje</b>\n'
                                    f'<b>Usuario:</b> @{target_user}\n'
+                                   f'<b>Chat ID:</b> {chat_id}\n'
                                    f'<b>Error:</b> {str(e)}',
                                    parse_mode='HTML')
                 
@@ -973,13 +1000,31 @@ def onmessage(update,bot:ObigramClient):
                                parse_mode='HTML')
             return
 
+        # COMANDO PARA VER CHAT IDs
+        if '/debug_chatids' in msgText and isadmin:
+            try:
+                users_info = []
+                for username, user_data in jdb.items.items():
+                    chat_id = user_data.get('chat_id', 'NO TIENE')
+                    users_info.append(f"@{username} - Chat ID: {chat_id}")
+                
+                debug_msg = "👥 **USUARIOS Y CHAT IDs:**\n\n" + "\n".join(users_info[:15])
+                if len(users_info) > 15:
+                    debug_msg += f"\n\n... y {len(users_info) - 15} más"
+                
+                bot.sendMessage(update.message.chat.id, debug_msg, parse_mode='HTML')
+                
+            except Exception as e:
+                bot.sendMessage(update.message.chat.id, f'❌ Error: {str(e)}')
+            return
+
         # BLOQUEAR COMANDOS DE ADMIN PARA USUARIOS NORMALES
         if not isadmin and is_text and any(cmd in msgText for cmd in [
             '/zips', '/account', '/host', '/repoid', '/tokenize', 
             '/cloud', '/uptype', '/proxy', '/dir', '/myuser', 
             '/files', '/txt_', '/del_', '/delall', '/adduserconfig', 
             '/banuser', '/getdb', '/moodle_eva', '/moodle_cursos', '/moodle_cened', '/moodle_instec',
-            '/msg_all', '/msg'
+            '/msg_all', '/msg', '/debug_chatids'
         ]):
             bot.sendMessage(update.message.chat.id,
                            "<b>🚫 Acceso Restringido</b>\n\n"
@@ -1328,6 +1373,7 @@ def onmessage(update,bot:ObigramClient):
 ┣⪼ /getdb - Base de datos
 ┣⪼ /msg_all - Mensaje a todos
 ┣⪼ /msg - Mensaje individual
+┣⪼ /debug_chatids - Ver Chat IDs
 
 ┣⪼ ⚡ CONFIGURACIÓN AVANZADA:
 ┣⪼ /myuser - Mi configuración

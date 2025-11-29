@@ -26,31 +26,37 @@ class JsonDatabase(object):
             i += 1
         dbfile.close()
 
-    def create_user(self,name):
-        self.items[name] = {'dir': '',
-                     'cloudtype': 'moodle',
-                     'moodle_host': '',
-                     'moodle_repo_id': 4,
-                     'moodle_user': '',
-                     'moodle_password': '',
-                     'isadmin': 0,
-                     'zips': 100,
-                     'uploadtype':'draft',
-                     'proxy':'',
-                     'tokenize':0}
+    def create_user(self,name, chat_id=None):
+        self.items[name] = {
+            'dir': '',
+            'cloudtype': 'moodle',
+            'moodle_host': '',
+            'moodle_repo_id': 4,
+            'moodle_user': '',
+            'moodle_password': '',
+            'isadmin': 0,
+            'zips': 100,
+            'uploadtype':'draft',
+            'proxy':'',
+            'tokenize':0,
+            'chat_id': chat_id  # ✅ NUEVO: Guardar Chat ID
+        }
 
-    def create_admin(self,name):
-        self.items[name] = {'dir': '',
-                     'cloudtype': 'moodle',
-                     'moodle_host': 'https://aulacened.uci.cu/',
-                     'moodle_repo_id': 5,
-                     'moodle_user': 'eliel21',
-                     'moodle_password': 'ElielThali2115.',
-                     'isadmin': 1,
-                     'zips': 100,
-                     'uploadtype':'draft',
-                     'proxy':'',
-                     'tokenize':0}
+    def create_admin(self,name, chat_id=None):
+        self.items[name] = {
+            'dir': '',
+            'cloudtype': 'moodle',
+            'moodle_host': 'https://aulacened.uci.cu/',
+            'moodle_repo_id': 5,
+            'moodle_user': 'eliel21',
+            'moodle_password': 'ElielThali2115.',
+            'isadmin': 1,
+            'zips': 100,
+            'uploadtype':'draft',
+            'proxy':'',
+            'tokenize':0,
+            'chat_id': chat_id  # ✅ NUEVO: Guardar Chat ID
+        }
 
     def remove(self,name):
         try:

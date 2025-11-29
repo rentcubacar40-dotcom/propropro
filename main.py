@@ -55,6 +55,138 @@ def format_time(seconds):
     except:
         return "00:00"
 
+def format_size(size_bytes):
+    """Formatea el tamaño en bytes a MB o GB automáticamente"""
+    if size_bytes <= 0:
+        return "0 MB"
+    
+    mb_size = size_bytes / (1024 * 1024)
+    
+    if mb_size >= 1024:  # Si es mayor a 1GB
+        gb_size = mb_size / 1024
+        return f"{gb_size:.2f} GB"
+    else:
+        return f"{mb_size:.2f} MB"
+
+def save_upload_stats(jdb, username, file_size, original_filename, file_upload_count):
+    """Guarda las estadísticas solo cuando la subida es completamente exitosa"""
+    try:
+        user_info = jdb.get_user(username)
+        if not user_info:
+            return False
+            
+        file_size_mb = file_size / (1024 * 1024)
+        current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # ✅ USAR .get() CON VALORES POR DEFECTO - FUNCIONA CON USUARIOS NUEVOS Y ANTIGUOS
+        user_info['total_mb_used'] = user_info.get('total_mb_used', 0) + file_size_mb
+        user_info['last_upload'] = current_time
+        user_info['upload_count'] = user_info.get('upload_count', 0) + 1
+        
+        # PRIMERA SUBIDA (solo si es la primera vez)
+        if not user_info.get('first_upload'):
+            user_info['first_upload'] = current_time
+            
+        # GUARDAR EN BASE DE DATOS
+        jdb.save_data_user(username, user_info)
+        jdb.save()
+        
+        print(f"✅ Estadísticas guardadas para @{username}: {file_size_mb:.2f} MB")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error guardando estadísticas: {e}")
+        return False
+
+def get_user_stats(username, user_info):
+    """Genera las estadísticas formateadas para un usuario"""
+    
+    # ✅ USAR .get() CON VALORES POR DEFECTO PARA USUARIOS ANTIGUOS
+    total_uploads = user_info.get('upload_count', 0)
+    total_mb_used = user_info.get('total_mb_used', 0)
+    last_upload = user_info.get('last_upload', 'Nunca')
+    first_upload = user_info.get('first_upload', 'Nunca')
+    
+    # Plataforma actual
+    platform = get_platform_name(user_info.get('moodle_host', ''))
+    
+    # Construir el mensaje con formato S1
+    stats_message = format_s1_message(f"📊 Estadísticas de @{username}", [
+        f"📁 Total subidas: {total_uploads}",
+        f"💾 Espacio usado: {format_size(total_mb_used * 1024 * 1024)}",
+        f"📅 Primera subida: {first_upload}",
+        f"🕐 Última subida: {last_upload}",
+        f"🏫 Plataforma: {platform}"
+    ])
+    
+    return stats_message
+
+def get_all_users_stats(jdb, admin_username):
+    """Genera estadísticas de todos los usuarios para el admin"""
+    
+    users_data = jdb.get_all_users()
+    total_users = len(users_data)
+    
+    # Estadísticas globales
+    total_uploads_all = 0
+    total_mb_all = 0
+    active_users = 0
+    users_with_uploads = 0
+    
+    # Usuarios más activos (top 10)
+    active_users_list = []
+    
+    for username, user_data in users_data.items():
+        if username == admin_username:  # Excluir al admin del ranking
+            continue
+            
+        uploads = user_data.get('upload_count', 0)
+        mb_used = user_data.get('total_mb_used', 0)
+        
+        total_uploads_all += uploads
+        total_mb_all += mb_used
+        
+        if uploads > 0:
+            users_with_uploads += 1
+            active_users_list.append({
+                'username': username,
+                'uploads': uploads,
+                'mb_used': mb_used,
+                'last_upload': user_data.get('last_upload', 'Nunca')
+            })
+            
+        # Considerar usuario activo si ha subido algo en los últimos 30 días
+        if user_data.get('last_upload'):
+            try:
+                last_upload_date = datetime.datetime.strptime(user_data['last_upload'], "%Y-%m-%d %H:%M:%S")
+                days_since_upload = (datetime.datetime.now() - last_upload_date).days
+                if days_since_upload <= 30:
+                    active_users += 1
+            except:
+                pass
+    
+    # Ordenar usuarios por actividad
+    active_users_list.sort(key=lambda x: x['uploads'], reverse=True)
+    top_users = active_users_list[:10]  # Top 10
+    
+    # Construir mensaje para admin
+    stats_message = format_s1_message("📊 Estadísticas Globales - ADMIN", [
+        f"👥 Total usuarios: {total_users}",
+        f"🚀 Usuarios activos: {active_users}",
+        f"📤 Usuarios con subidas: {users_with_uploads}",
+        f"📁 Total subidas: {total_uploads_all}",
+        f"💾 Espacio total: {format_size(total_mb_all * 1024 * 1024)}",
+        f"📊 Promedio por usuario: {format_size((total_mb_all/max(users_with_uploads,1)) * 1024 * 1024) if users_with_uploads > 0 else '0 MB'}"
+    ])
+    
+    # Agregar top usuarios si hay datos
+    if top_users:
+        stats_message += "\n\n🏆 **Top 10 Usuarios Más Activos:**\n"
+        for i, user in enumerate(top_users, 1):
+            stats_message += f"{i}. @{user['username']} - {user['uploads']} subidas ({format_size(user['mb_used'] * 1024 * 1024)})\n"
+    
+    return stats_message
+
 def downloadFile(downloader,filename,currentBits,totalBits,speed,time_elapsed,args):
     try:
         bot = args[0]
@@ -322,13 +454,16 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
         is_compressed_file = file_extension in ['zip', 'rar', '7z', 'tar', 'gz']
             
         if file_size > max_file_size and not is_compressed_file:
-            # Mostrar información de compresión (SIMPLIFICADA)
+            # Calcular cantidad de partes
+            total_parts = (file_size + max_file_size - 1) // max_file_size
+            
+            # Mostrar información de compresión (MEJORADA con cantidad de partes)
             platform_name = get_platform_name(getUser['moodle_host'])
             
             compresingInfo = format_s1_message("🗜️ Comprimiendo Archivo", [
                 f"📄 Archivo: {original_filename}",
                 f"📦 Tamaño original: {sizeof_fmt(file_size)}",
-                f"🗂️ Partes de: {sizeof_fmt(max_file_size)}",
+                f"🗂️ Partes: {total_parts} de {sizeof_fmt(max_file_size)} c/u",
                 f"🏫 Plataforma: {platform_name}"
             ])
             
@@ -381,18 +516,8 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
         if thread and thread.getStore('stop'):
             return
             
-        # ACTUALIZAR ESTADÍSTICAS DE USUARIO
-        try:
-            file_size_mb = file_size / (1024 * 1024)
-            current_total = getUser.get('total_mb_used', 0)
-            new_total = current_total + file_size_mb
-            getUser['total_mb_used'] = new_total
-            getUser['last_upload'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            getUser['upload_count'] = getUser.get('upload_count', 0) + 1
-            jdb.save_data_user(username, getUser)
-            jdb.save()
-        except Exception as e:
-            print(f"Error actualizando estadísticas: {e}")
+        # ✅ ELIMINADO: Guardado antiguo de estadísticas aquí
+        # Los datos se guardarán SOLO al final exitoso
             
         bot.editMessageText(message,'<b>📄 Preparando enlaces...</b>', parse_mode='HTML')
         evidname = ''
@@ -440,6 +565,10 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
             # Usar el nombre original del archivo
             total_parts = file_upload_count
             
+            # ✅ GUARDAR ESTADÍSTICAS SOLO AQUÍ - CUANDO TODO ESTÉ COMPLETAMENTE TERMINADO
+            if not thread or not thread.getStore('stop'):
+                save_upload_stats(jdb, username, file_size, original_filename, file_upload_count)
+
             # MENSAJE FINAL SEGÚN PLATAFORMA
             platform_name = get_platform_name(getUser['moodle_host'])
             finish_title = "✅ Subida Completada"
@@ -697,6 +826,83 @@ def onmessage(update,bot:ObigramClient):
 
         is_text = msgText != ''
         isadmin = jdb.is_admin(username)
+        
+        # COMANDOS NUEVOS: ESTADÍSTICAS
+        if '/mystats' in msgText:
+            try:
+                # Usuarios normales solo pueden ver sus stats, admin puede ver cualquier usuario
+                parts = msgText.split(' ')
+                target_user = username  # Por defecto el usuario actual
+                
+                # Si es admin y especificó un usuario, usar ese
+                if isadmin and len(parts) > 1:
+                    target_user = parts[1].replace('@', '')  # Quitar @ si existe
+                
+                user_data = jdb.get_user(target_user)
+                if user_data:
+                    stats_message = get_user_stats(target_user, user_data)
+                    bot.sendMessage(update.message.chat.id, stats_message, parse_mode='HTML')
+                else:
+                    bot.sendMessage(update.message.chat.id, 
+                                  f'<b>❌ Usuario @{target_user} no encontrado</b>', 
+                                  parse_mode='HTML')
+                    
+            except Exception as e:
+                print(f"Error en mystats: {e}")
+                bot.sendMessage(update.message.chat.id, 
+                              '<b>❌ Error obteniendo estadísticas</b>', 
+                              parse_mode='HTML')
+            return
+
+        if '/stats_user' in msgText:
+            if not isadmin:
+                bot.sendMessage(update.message.chat.id, 
+                              '<b>❌ Comando restringido a administradores</b>', 
+                              parse_mode='HTML')
+                return
+            
+            try:
+                parts = msgText.split(' ')
+                if len(parts) < 2:
+                    bot.sendMessage(update.message.chat.id,
+                                  '<b>❌ Formato incorrecto</b>\n'
+                                  '<code>/stats_user @usuario</code>',
+                                  parse_mode='HTML')
+                    return
+                
+                target_user = parts[1].replace('@', '')
+                user_data = jdb.get_user(target_user)
+                if user_data:
+                    stats_message = get_user_stats(target_user, user_data)
+                    bot.sendMessage(update.message.chat.id, stats_message, parse_mode='HTML')
+                else:
+                    bot.sendMessage(update.message.chat.id, 
+                                  f'<b>❌ Usuario @{target_user} no encontrado</b>', 
+                                  parse_mode='HTML')
+                    
+            except Exception as e:
+                print(f"Error en stats_user: {e}")
+                bot.sendMessage(update.message.chat.id, 
+                              '<b>❌ Error obteniendo estadísticas del usuario</b>', 
+                              parse_mode='HTML')
+            return
+
+        if '/stats' in msgText:
+            if not isadmin:
+                bot.sendMessage(update.message.chat.id, 
+                              '<b>❌ Comando restringido a administradores</b>', 
+                              parse_mode='HTML')
+                return
+            
+            try:
+                stats_message = get_all_users_stats(jdb, username)
+                bot.sendMessage(update.message.chat.id, stats_message, parse_mode='HTML')
+            except Exception as e:
+                print(f"Error en stats: {e}")
+                bot.sendMessage(update.message.chat.id, 
+                              '<b>❌ Error obteniendo estadísticas globales</b>', 
+                              parse_mode='HTML')
+            return
         
         # COMANDOS DE PROXY MEJORADOS (SOLO SOCKS)
         if '/proxy_test' in msgText:
@@ -1135,8 +1341,8 @@ def onmessage(update,bot:ObigramClient):
             '/zips', '/account', '/host', '/repoid', '/tokenize', 
             '/cloud', '/uptype', '/dir', '/myuser', 
             '/files', '/txt_', '/del_', '/delall', '/adduserconfig', 
-            '/banuser', '/getdb', '/moodle_eva', '/moodle_cursos', '/moodle_cened', '/moodle_instec'
-            # LOS COMANDOS DE PROXY SE ELIMINARON DE ESTA LISTA
+            '/banuser', '/getdb', '/moodle_eva', '/moodle_cursos', '/moodle_cened', '/moodle_instec',
+            '/stats_user', '/stats'  # ✅ NUEVOS COMANDOS BLOQUEADOS
         ]):
             bot.sendMessage(update.message.chat.id,
                            "<b>🚫 Acceso Restringido</b>\n\n"
@@ -1144,6 +1350,7 @@ def onmessage(update,bot:ObigramClient):
                            "<b>✅ Comandos disponibles para ti:</b>\n"
                            "• /start - Información del bot\n"
                            "• /tutorial - Guía de uso completo\n"
+                           "• /mystats - Tus estadísticas\n"
                            "• /proxy - Configurar proxy SOCKS\n"
                            "• /proxy_test - Probar proxy actual\n"
                            "• /delproxy - Usar conexión directa\n"
@@ -1160,6 +1367,8 @@ def onmessage(update,bot:ObigramClient):
                            "• /proxy - Configurar proxy SOCKS\n"
                            "• /proxy_test - Probar conexión\n"
                            "• /delproxy - Conexión directa\n\n"
+                           "📊 <b>Comandos de Estadísticas:</b>\n"
+                           "• /mystats - Ver tus estadísticas\n\n"
                            "📝 <b>Para ver comandos disponibles:</b> Usa /start",
                            parse_mode='HTML')
             return
@@ -1475,6 +1684,11 @@ def onmessage(update,bot:ObigramClient):
 ┣⪼ /proxy_test - Probar proxy
 ┣⪼ /delproxy - Conexión directa
 
+┣⪼ 📊 COMANDOS ESTADÍSTICAS:
+┣⪼ /mystats - Mis estadísticas
+┣⪼ /stats_user @user - Stats de usuario
+┣⪼ /stats - Stats globales
+
 ┣⪼ 👥 GESTIÓN DE USUARIOS:
 ┣⪼ /adduserconfig - Agregar y configurar
 ┣⪼ /banuser - Eliminar usuario(s)
@@ -1502,6 +1716,9 @@ def onmessage(update,bot:ObigramClient):
 ┣⪼ /proxy - Configurar proxy SOCKS
 ┣⪼ /proxy_test - Probar proxy
 ┣⪼ /delproxy - Conexión directa
+
+┣⪼ 📊 COMANDOS ESTADÍSTICAS:
+┣⪼ /mystats - Mis estadísticas
 
 ┣⪼ 📝 COMANDOS GENERALES:
 ┣⪼ /start - Información del bot

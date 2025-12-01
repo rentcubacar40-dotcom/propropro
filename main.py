@@ -46,11 +46,6 @@ def get_cuba_time_formatted():
     
     return fecha_espanol
 
-def get_date_numeric():
-    """Obtiene la fecha actual en formato DD-MM-YY"""
-    cuba_time = datetime.datetime.now(CUBA_TZ)
-    return cuba_time.strftime("%d-%m-%y")  # Formato: 25-11-25
-
 def create_progress_bar(percentage, bars=15):
     """Crea barra de progreso estilo S1 con ⬢⬡"""
     filled = int(percentage / 100 * bars)
@@ -105,8 +100,8 @@ def save_upload_stats(jdb, username, file_size, original_filename, file_upload_c
             
         file_size_mb = file_size / (1024 * 1024)
         
-        # ✅ OBTENER FECHA EN FORMATO NUMÉRICO (DD-MM-YY)
-        current_time = get_date_numeric()
+        # ✅ OBTENER HORA DE CUBA EN ESPAÑOL
+        current_time = get_cuba_time_formatted()
         
         # DATOS ESTADÍSTICOS
         user_info['total_mb_used'] = user_info.get('total_mb_used', 0) + file_size_mb
@@ -121,7 +116,7 @@ def save_upload_stats(jdb, username, file_size, original_filename, file_upload_c
         jdb.save_data_user(username, user_info)
         jdb.save()
         
-        print(f"✅ Estadísticas guardadas para @{username}: {file_size_mb:.2f} MB - Fecha: {current_time}")
+        print(f"✅ Estadísticas guardadas para @{username}: {file_size_mb:.2f} MB - Hora Cuba: {current_time}")
         return True
         
     except Exception as e:
@@ -136,43 +131,6 @@ def get_user_stats(username, user_info):
     total_mb_used = user_info.get('total_mb_used', 0)
     last_upload = user_info.get('last_upload', 'Nunca')
     first_upload = user_info.get('first_upload', 'Nunca')
-    
-    # Convertir fechas de formato antiguo a nuevo si es necesario
-    if last_upload != 'Nunca' and 'de' in last_upload:
-        # Intentar convertir formato antiguo a nuevo
-        try:
-            meses = {
-                'enero': '01', 'febrero': '02', 'marzo': '03', 'abril': '04',
-                'mayo': '05', 'junio': '06', 'julio': '07', 'agosto': '08',
-                'septiembre': '09', 'octubre': '10', 'noviembre': '11', 'diciembre': '12'
-            }
-            partes = last_upload.split(' de ')
-            dia = partes[0].strip()
-            mes_nombre = partes[1].strip()
-            año_completo = partes[2].split(' ')[0].strip()
-            año = año_completo[-2:]  # Tomar últimos 2 dígitos
-            mes = meses.get(mes_nombre.lower(), '01')
-            last_upload = f"{int(dia):02d}-{mes}-{año}"
-        except:
-            pass
-    
-    if first_upload != 'Nunca' and 'de' in first_upload:
-        # Intentar convertir formato antiguo a nuevo
-        try:
-            meses = {
-                'enero': '01', 'febrero': '02', 'marzo': '03', 'abril': '04',
-                'mayo': '05', 'junio': '06', 'julio': '07', 'agosto': '08',
-                'septiembre': '09', 'octubre': '10', 'noviembre': '11', 'diciembre': '12'
-            }
-            partes = first_upload.split(' de ')
-            dia = partes[0].strip()
-            mes_nombre = partes[1].strip()
-            año_completo = partes[2].split(' ')[0].strip()
-            año = año_completo[-2:]  # Tomar últimos 2 dígitos
-            mes = meses.get(mes_nombre.lower(), '01')
-            first_upload = f"{int(dia):02d}-{mes}-{año}"
-        except:
-            pass
     
     # Plataforma actual
     platform = get_platform_name(user_info.get('moodle_host', ''))
@@ -215,60 +173,43 @@ def get_all_users_stats(jdb, admin_username):
         
         if uploads > 0:
             users_with_uploads += 1
-            
-            # Convertir última subida a formato numérico si es necesario
-            last_upload = user_data.get('last_upload', 'Nunca')
-            if last_upload != 'Nunca' and 'de' in last_upload:
-                try:
-                    meses = {
-                        'enero': '01', 'febrero': '02', 'marzo': '03', 'abril': '04',
-                        'mayo': '05', 'junio': '06', 'julio': '07', 'agosto': '08',
-                        'septiembre': '09', 'octubre': '10', 'noviembre': '11', 'diciembre': '12'
-                    }
-                    partes = last_upload.split(' de ')
-                    dia = partes[0].strip()
-                    mes_nombre = partes[1].strip()
-                    año_completo = partes[2].split(' ')[0].strip()
-                    año = año_completo[-2:]
-                    mes = meses.get(mes_nombre.lower(), '01')
-                    last_upload = f"{int(dia):02d}-{mes}-{año}"
-                except:
-                    pass
-            
             active_users_list.append({
                 'username': username,
                 'uploads': uploads,
                 'mb_used': mb_used,
-                'last_upload': last_upload
+                'last_upload': user_data.get('last_upload', 'Nunca')
             })
             
         # Considerar usuario activo si ha subido algo en los últimos 30 días
-        last_upload_date = user_data.get('last_upload', '')
-        if last_upload_date:
+        if user_data.get('last_upload'):
             try:
-                # Convertir fecha a datetime para cálculo (soporta ambos formatos)
-                if 'de' in last_upload_date:
-                    # Formato antiguo: "25 de noviembre de 2025"
-                    meses = {
-                        'enero': 1, 'febrero': 2, 'febrero': 2, 'marzo': 3, 'abril': 4,
-                        'mayo': 5, 'junio': 6, 'julio': 7, 'agosto': 8,
-                        'septiembre': 9, 'octubre': 10, 'noviembre': 11, 'diciembre': 12
-                    }
-                    partes = last_upload_date.split(' de ')
-                    dia = int(partes[0])
-                    mes_nombre = partes[1]
-                    año = int(partes[2].split(' ')[0])
-                    mes = meses[mes_nombre]
-                    fecha_dt = datetime.datetime(año, mes, dia)
-                else:
-                    # Formato nuevo: "25-11-25"
-                    dia, mes, año = map(int, last_upload_date.split('-'))
-                    año = 2000 + año if año < 100 else año
-                    fecha_dt = datetime.datetime(año, mes, dia)
-                
-                days_since_upload = (datetime.datetime.now() - fecha_dt).days
-                if days_since_upload <= 30:
-                    active_users += 1
+                # Convertir fecha de español a datetime para cálculo
+                fecha_str = user_data['last_upload']
+                for mes_num, mes_nombre in {
+                    1: 'enero', 2: 'febrero', 3: 'marzo', 4: 'abril',
+                    5: 'mayo', 6: 'junio', 7: 'julio', 8: 'agosto',
+                    9: 'septiembre', 10: 'octubre', 11: 'noviembre', 12: 'diciembre'
+                }.items():
+                    if mes_nombre in fecha_str:
+                        # Extraer día, año y hora
+                        partes = fecha_str.split(' de ')
+                        dia = int(partes[0])
+                        año = int(partes[2].split(' ')[0])
+                        hora_str = partes[2].split(' ')[1] + ' ' + partes[2].split(' ')[2]
+                        
+                        # Convertir hora 12h a 24h
+                        from datetime import datetime
+                        hora_24 = datetime.strptime(hora_str, '%I:%M %p').strftime('%H:%M')
+                        
+                        # Crear datetime object
+                        fecha_dt = datetime(año, mes_num, dia, 
+                                          int(hora_24.split(':')[0]), 
+                                          int(hora_24.split(':')[1]))
+                        
+                        days_since_upload = (datetime.now() - fecha_dt).days
+                        if days_since_upload <= 30:
+                            active_users += 1
+                        break
             except:
                 pass
     
@@ -291,7 +232,6 @@ def get_all_users_stats(jdb, admin_username):
         stats_message += "\n\n🏆 Top 10 Usuarios Más Activos:\n"
         for i, user in enumerate(top_users, 1):
             stats_message += f"{i}. @{user['username']} - {user['uploads']} subidas ({format_size(user['mb_used'] * 1024 * 1024)})\n"
-            stats_message += f"   Última: {user['last_upload']}\n"
     
     return stats_message
 
@@ -300,16 +240,8 @@ def downloadFile(downloader,filename,currentBits,totalBits,speed,time_elapsed,ar
         bot = args[0]
         message = args[1]
         thread = args[2]
-        
-        # Verificar si el usuario canceló
         if thread.getStore('stop'):
             downloader.stop()
-            return
-            
-        # ✅ ARREGLO CLAVE: DETENER CUANDO LA DESCARGA TERMINA
-        if totalBits > 0 and currentBits >= totalBits:
-            # Cuando llega al 100%, NO hacer nada más
-            # Dejar que la descarga termine naturalmente
             return
             
         downloadingInfo = ''
@@ -324,16 +256,13 @@ def downloadFile(downloader,filename,currentBits,totalBits,speed,time_elapsed,ar
         current_mb = currentBits / (1024 * 1024)
         speed_mb = speed / (1024 * 1024) if speed > 0 else 0
         
-        # Cálculo del tiempo - CORREGIDO
-        eta_formatted = "Calculando..."
+        # CÁLCULO SIMPLIFICADO Y MÁS PRECISO DEL TIEMPO
         if speed > 0 and totalBits > currentBits:
             remaining_bits = totalBits - currentBits
             remaining_time = remaining_bits / speed
-            # Solo mostrar tiempo si es mayor a 0
-            if remaining_time > 0:
-                eta_formatted = format_time(remaining_time)
-            else:
-                eta_formatted = "Finalizando..."
+            eta_formatted = format_time(remaining_time)
+        else:
+            eta_formatted = "Calculando..."
         
         downloadingInfo = format_s1_message("📥 Descargando", [
             f"[{progress_bar}]",
@@ -571,230 +500,61 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
         base_name = original_filename.split('.')[0]
         file_extension = original_filename.split('.')[-1].lower() if '.' in original_filename else ''
         is_compressed_file = file_extension in ['zip', 'rar', '7z', 'tar', 'gz']
-        
-        # Verificar si el archivo es grande y NO está ya comprimido
-        if file_size > max_file_size and not is_compressed_file:
             
-            # ✅ NUEVA FUNCIONALIDAD: PREGUNTAR SI QUIERE RECIBIR EN PARTES
-            platform_name = get_platform_name(getUser['moodle_host'])
+        if file_size > max_file_size and not is_compressed_file:
+            # Calcular cantidad de partes
             total_parts = (file_size + max_file_size - 1) // max_file_size
             
-            # Mensaje único para todas las Moodles
-            option_msg = f"""╭━━━━❰📦 Archivo Grande Detectado❱━➣
-┣⪼ 📄 **Archivo:** `{original_filename}`
-┣⪼ 📊 **Tamaño:** {format_size(file_size)}
-┣⪼ ⚠️ **Límite plataforma:** {format_size(max_file_size)}
-┣⪼ 🗂️ **Partes necesarias:** {total_parts}
-│
-┣⪼ ❗ **Hemos detectado que ha superado el límite del tamaño**
-┣⪼ 💡 **Le recomendamos recibir el archivo por partes,**
-┣⪼ 🎯 **mayormente si usa la Moodle CENED.**
-│
-┣⪼ ❓ **¿Desea recibir el archivo dividido en {total_parts} partes?**
-┣⪼ 📤 (Si elige NO, se continuará con proceso automático)
-╰━━━━━━━━━━━━━━━➣"""
+            # Mostrar información de compresión (MEJORADA con cantidad de partes)
+            platform_name = get_platform_name(getUser['moodle_host'])
             
-            # Enviar opciones con botones inline
-            from pyobigram.client import InlineKeyboard, InlineKeyboardButton
-            keyboard = InlineKeyboard(row_width=2)
-            keyboard.add(
-                InlineKeyboardButton("✅ Sí, dividir en partes", callback_data=f"split_yes_{thread.cancel_id}"),
-                InlineKeyboardButton("❌ No, continuar automático", callback_data=f"split_no_{thread.cancel_id}")
-            )
+            compresingInfo = format_s1_message("🗜️ Comprimiendo Archivo", [
+                f"📄 Archivo: {original_filename}",
+                f"📦 Tamaño original: {sizeof_fmt(file_size)}",
+                f"🗂️ Partes: {total_parts}",
+                f"🏫 Plataforma: {platform_name}"
+            ])
             
-            # Guardar información para callback
-            thread.store('split_question', {
-                'original_filename': original_filename,
-                'file_size': file_size,
-                'max_file_size': max_file_size,
-                'file_path': file,
-                'base_name': base_name,
-                'total_parts': total_parts,
-                'platform': platform_name
-            })
+            bot.editMessageText(message, compresingInfo)
             
-            # Enviar mensaje con pregunta
-            bot.editMessageText(message, option_msg)
-            question_msg = bot.sendMessage(
-                message.chat.id,
-                "**Seleccione una opción:** 👇",
-                reply_markup=keyboard
-            )
+            # CREAR ARCHIVO TEMPORAL CON NOMBRE CORRECTO
+            temp_dir = "temp_" + createID()
+            os.makedirs(temp_dir, exist_ok=True)
             
-            # ✅ ESPERAR RESPUESTA OBLIGATORIAMENTE (sin timeout)
-            user_wants_split = None  # None = esperando, True = sí, False = no
+            # Copiar el archivo a un directorio temporal con su nombre original
+            temp_file_path = os.path.join(temp_dir, original_filename)
+            import shutil
+            shutil.copy2(file, temp_file_path)
             
-            while True:
-                if thread.getStore('split_response'):
-                    response = thread.getStore('split_response')
-                    thread.store('split_response', None)
-                    
-                    if response == 'yes':
-                        user_wants_split = True
-                    elif response == 'no':
-                        user_wants_split = False
-                    break
-                
-                # Verificar si el usuario canceló el proceso
-                if thread.getStore('stop'):
-                    # Limpiar mensaje de pregunta
-                    try:
-                        bot.deleteMessage(question_msg.chat.id, question_msg.message_id)
-                    except:
-                        pass
-                    return
-                
-                time.sleep(0.5)  # Pequeña pausa
+            zipname = base_name + createID()
+            mult_file = zipfile.MultiFile(zipname, max_file_size)
             
-            # Eliminar mensaje de pregunta
+            # CREAR ZIP CON EL ARCHIVO Y SU NOMBRE ORIGINAL
+            with zipfile.ZipFile(mult_file, mode='w', compression=zipfile.ZIP_DEFLATED) as zipf:
+                # Agregar el archivo con su nombre original preservado
+                zipf.write(temp_file_path, arcname=original_filename)
+            
+            mult_file.close()
+            
+            # LIMPIAR ARCHIVO TEMPORAL
             try:
-                bot.deleteMessage(question_msg.chat.id, question_msg.message_id)
-            except:
-                pass
+                shutil.rmtree(temp_dir)
+            except: pass
             
-            # Si eligió NO, continuar con proceso automático normal
-            if user_wants_split == False:
-                bot.editMessageText(message, "🔄 **Continuando con proceso automático...**")
-                
-                # ✅ PROCESO AUTOMÁTICO NORMAL (tu código actual)
-                compresingInfo = format_s1_message("🗜️ Comprimiendo Archivo", [
-                    f"📄 Archivo: {original_filename}",
-                    f"📦 Tamaño original: {sizeof_fmt(file_size)}",
-                    f"🗂️ Partes: {total_parts}",  # ✅ CAMBIADO: Solo cantidad de partes
-                    f"🏫 Plataforma: {platform_name}"
-                ])
-                
-                bot.editMessageText(message, compresingInfo)
-                
-                # CREAR ARCHIVO TEMPORAL CON NOMBRE CORRECTO
-                temp_dir = "temp_" + createID()
-                os.makedirs(temp_dir, exist_ok=True)
-                
-                # Copiar el archivo a un directorio temporal con su nombre original
-                temp_file_path = os.path.join(temp_dir, original_filename)
-                import shutil
-                shutil.copy2(file, temp_file_path)
-                
-                zipname = base_name + createID()
-                mult_file = zipfile.MultiFile(zipname, max_file_size)
-                
-                # CREAR ZIP CON EL ARCHIVO Y SU NOMBRE ORIGINAL
-                with zipfile.ZipFile(mult_file, mode='w', compression=zipfile.ZIP_DEFLATED) as zipf:
-                    # Agregar el archivo con su nombre original preservado
-                    zipf.write(temp_file_path, arcname=original_filename)
-                
-                mult_file.close()
-                
-                # LIMPIAR ARCHIVO TEMPORAL
-                try:
-                    shutil.rmtree(temp_dir)
-                except: pass
-                
-                # Usar el nombre base original para la subida
-                client = processUploadFiles(original_filename, file_size, mult_file.files, update, bot, message, thread=thread, jdb=jdb)
-                
-                try:
-                    os.unlink(file)
-                except:pass
-                file_upload_count = len(mult_file.files)
-                
-                # LIMPIAR ARCHIVOS TEMPORALES ZIP
-                try:
-                    for zip_file in mult_file.files:
-                        if os.path.exists(zip_file):
-                            os.unlink(zip_file)
-                except:pass
+            # Usar el nombre base original para la subida
+            client = processUploadFiles(original_filename, file_size, mult_file.files, update, bot, message, thread=thread, jdb=jdb)
             
-            elif user_wants_split == True:
-                # ✅ USUARIO QUIERE RECIBIR PARTES
-                bot.editMessageText(message, "🔪 **Dividiendo archivo en partes...**")
-                
-                # Crear directorio temporal para partes
-                temp_split_dir = "split_" + createID()
-                os.makedirs(temp_split_dir, exist_ok=True)
-                
-                # Dividir archivo en partes binarias
-                part_files = []
-                with open(file, 'rb') as f:
-                    part_num = 1
-                    
-                    while True:
-                        # Leer chunk del tamaño máximo
-                        chunk = f.read(max_file_size)
-                        if not chunk:
-                            break
-                        
-                        # Crear nombre de parte manteniendo extensión
-                        if '.' in original_filename:
-                            name_parts = original_filename.rsplit('.', 1)
-                            part_name = f"{name_parts[0]}_part{part_num:03d}.{name_parts[1]}"
-                        else:
-                            part_name = f"{original_filename}_part{part_num:03d}"
-                        
-                        part_path = os.path.join(temp_split_dir, part_name)
-                        
-                        # Escribir parte
-                        with open(part_path, 'wb') as part_file:
-                            part_file.write(chunk)
-                        
-                        part_files.append({
-                            'path': part_path,
-                            'name': part_name,
-                            'size': len(chunk),
-                            'part': part_num
-                        })
-                        
-                        part_num += 1
-                
-                # Mostrar información de partes creadas
-                split_info = format_s1_message("✅ Partes Creadas", [
-                    f"📄 Archivo original: {original_filename}",
-                    f"📊 Tamaño total: {format_size(file_size)}",
-                    f"🗂️ Partes creadas: {len(part_files)}",
-                    f"📏 Tamaño por parte: ~{format_size(max_file_size)}"
-                ])
-                
-                bot.editMessageText(message, split_info)
-                
-                # Enviar cada parte como documento
-                for i, part in enumerate(part_files, 1):
-                    try:
-                        # Mostrar progreso
-                        progress_msg = f"**Enviando parte {i}/{len(part_files)}**\n`{part['name']}`"
-                        
-                        if i % 3 == 0 or i == len(part_files):
-                            bot.editMessageText(message, progress_msg)
-                        
-                        # Enviar archivo
-                        with open(part['path'], 'rb') as part_file:
-                            bot.sendDocument(
-                                chat_id=message.chat.id,
-                                document=part_file,
-                                caption=f"**Parte {i}/{len(part_files)}** - {format_size(part['size'])}"
-                            )
-                        
-                    except Exception as e:
-                        print(f"Error enviando parte {i}: {e}")
-                        continue
-                
-                # Mensaje final simple
-                bot.editMessageText(message, f"✅ **{len(part_files)} partes enviadas correctamente**")
-                
-                # Limpiar archivos temporales
-                try:
-                    for part in part_files:
-                        if os.path.exists(part['path']):
-                            os.unlink(part['path'])
-                    
-                    if os.path.exists(temp_split_dir):
-                        os.rmdir(temp_split_dir)
-                    
-                    if os.path.exists(file):
-                        os.unlink(file)
-                except:
-                    pass
-                
-                return  # Terminar aquí
+            try:
+                os.unlink(file)
+            except:pass
+            file_upload_count = len(mult_file.files)
+            
+            # LIMPIAR ARCHIVOS TEMPORALES ZIP
+            try:
+                for zip_file in mult_file.files:
+                    if os.path.exists(zip_file):
+                        os.unlink(zip_file)
+            except:pass
                         
         else:
             # Para archivos pequeños o ya comprimidos, usar el nombre original
@@ -940,7 +700,7 @@ def ddl(update,bot,message,url,file_name='',thread=None,jdb=None):
             del bot.threads[thread.cancel_id]
     except Exception as ex:
         print(f"Error en ddl: {ex}")
-        
+
 def megadl(update,bot,message,megaurl,file_name='',thread=None,jdb=None):
     try:
         thread.cancel_id = createID()
@@ -1071,895 +831,891 @@ def test_moodle_connection(user_info):
 
 def onmessage(update,bot:ObigramClient):
     try:
-        # PRIMERO OBTENER DATOS BÁSICOS PARA COMANDOS NORMALES
         thread = bot.this_thread
-        
-        # ✅ CORRECCIÓN: VERIFICAR SI ES UN MENSAJE NORMAL (NO CALLBACK)
-        if update.message:
-            # ES UN MENSAJE NORMAL - PROCESAR COMANDOS
-            username = update.message.sender.username
-            tl_admin_user = os.environ.get('tl_admin_user','Eliel_21')
+        username = update.message.sender.username
+        tl_admin_user = os.environ.get('tl_admin_user','Eliel_21')
 
-            jdb = JsonDatabase('database')
-            jdb.check_create()
-            jdb.load()
+        jdb = JsonDatabase('database')
+        jdb.check_create()
+        jdb.load()
 
-            user_info = jdb.get_user(username)
+        user_info = jdb.get_user(username)
 
-            if username == tl_admin_user or tl_admin_user=='*' or user_info:
-                if user_info is None:
-                    if username == tl_admin_user:
-                        jdb.create_admin(username)
-                    else:
-                        # Usuarios normales no se crean automáticamente, deben ser agregados por admin
-                        bot.sendMessage(update.message.chat.id,
-                                       "<b>🚫 Acceso Restringido</b>\n\n"
-                                       "No tienes acceso a este bot.\n\n"
-                                       "📞 <b>Contacta al propietario:</b>\n"
-                                       f"👤 @{tl_admin_user}",
-                                       parse_mode='HTML')
-                        return
-                    user_info = jdb.get_user(username)
-                    jdb.save_data_user(username, user_info)
-                    jdb.save()
-            else:
-                bot.sendMessage(update.message.chat.id,
-                               "<b>🚫 Acceso Restringido</b>\n\n"
-                               "No tienes acceso a este bot.\n\n"
-                               "📞 <b>Contacta al propietario:</b>\n"
-                               f"👤 @{tl_admin_user}",
-                               parse_mode='HTML')
-                return
+        if username == tl_admin_user or tl_admin_user=='*' or user_info:
+            if user_info is None:
+                if username == tl_admin_user:
+                    jdb.create_admin(username)
+                else:
+                    # Usuarios normales no se crean automáticamente, deben ser agregados por admin
+                    bot.sendMessage(update.message.chat.id,
+                                   "<b>🚫 Acceso Restringido</b>\n\n"
+                                   "No tienes acceso a este bot.\n\n"
+                                   "📞 <b>Contacta al propietario:</b>\n"
+                                   f"👤 @{tl_admin_user}",
+                                   parse_mode='HTML')
+                    return
+                user_info = jdb.get_user(username)
+                jdb.save_data_user(username, user_info)
+                jdb.save()
+        else:
+            bot.sendMessage(update.message.chat.id,
+                           "<b>🚫 Acceso Restringido</b>\n\n"
+                           "No tienes acceso a este bot.\n\n"
+                           "📞 <b>Contacta al propietario:</b>\n"
+                           f"👤 @{tl_admin_user}",
+                           parse_mode='HTML')
+            return
 
+        msgText = ''
+        try: 
+            msgText = update.message.text
+        except: 
             msgText = ''
-            try: 
-                msgText = update.message.text
-            except: 
-                msgText = ''
 
-            is_text = msgText != ''
-            isadmin = jdb.is_admin(username)
-            
-            # COMANDOS NUEVOS: ESTADÍSTICAS
-            if '/mystats' in msgText:
-                try:
-                    # Usuarios normales solo pueden ver sus stats, admin puede ver cualquier usuario
-                    parts = msgText.split(' ')
-                    target_user = username  # Por defecto el usuario actual
-                    
-                    # Si es admin y especificó un usuario, usar ese
-                    if isadmin and len(parts) > 1:
-                        target_user = parts[1].replace('@', '')  # Quitar @ si existe
-                    
-                    user_data = jdb.get_user(target_user)
-                    if user_data:
-                        stats_message = get_user_stats(target_user, user_data)
-                        bot.sendMessage(update.message.chat.id, stats_message, parse_mode='HTML')
-                    else:
-                        bot.sendMessage(update.message.chat.id, 
-                                      f'<b>❌ Usuario @{target_user} no encontrado</b>', 
-                                      parse_mode='HTML')
-                        
-                except Exception as e:
-                    print(f"Error en mystats: {e}")
-                    bot.sendMessage(update.message.chat.id, 
-                                  '<b>❌ Error obteniendo estadísticas</b>', 
-                                  parse_mode='HTML')
-                return
-
-            if '/stats_user' in msgText:
-                if not isadmin:
-                    bot.sendMessage(update.message.chat.id, 
-                                  '<b>❌ Comando restringido a administradores</b>', 
-                                  parse_mode='HTML')
-                    return
+        is_text = msgText != ''
+        isadmin = jdb.is_admin(username)
+        
+        # COMANDOS NUEVOS: ESTADÍSTICAS
+        if '/mystats' in msgText:
+            try:
+                # Usuarios normales solo pueden ver sus stats, admin puede ver cualquier usuario
+                parts = msgText.split(' ')
+                target_user = username  # Por defecto el usuario actual
                 
-                try:
-                    parts = msgText.split(' ')
-                    if len(parts) < 2:
-                        bot.sendMessage(update.message.chat.id,
-                                      '<b>❌ Formato incorrecto</b>\n'
-                                      '<code>/stats_user @usuario</code>',
-                                      parse_mode='HTML')
-                        return
-                    
-                    target_user = parts[1].replace('@', '')
-                    user_data = jdb.get_user(target_user)
-                    if user_data:
-                        stats_message = get_user_stats(target_user, user_data)
-                        bot.sendMessage(update.message.chat.id, stats_message, parse_mode='HTML')
-                    else:
-                        bot.sendMessage(update.message.chat.id, 
-                                      f'<b>❌ Usuario @{target_user} no encontrado</b>', 
-                                      parse_mode='HTML')
-                        
-                except Exception as e:
-                    print(f"Error en stats_user: {e}")
-                    bot.sendMessage(update.message.chat.id, 
-                                  '<b>❌ Error obteniendo estadísticas del usuario</b>', 
-                                  parse_mode='HTML')
-                return
-
-            if '/stats' in msgText:
-                if not isadmin:
-                    bot.sendMessage(update.message.chat.id, 
-                                  '<b>❌ Comando restringido a administradores</b>', 
-                                  parse_mode='HTML')
-                    return
+                # Si es admin y especificó un usuario, usar ese
+                if isadmin and len(parts) > 1:
+                    target_user = parts[1].replace('@', '')  # Quitar @ si existe
                 
-                try:
-                    stats_message = get_all_users_stats(jdb, username)
+                user_data = jdb.get_user(target_user)
+                if user_data:
+                    stats_message = get_user_stats(target_user, user_data)
                     bot.sendMessage(update.message.chat.id, stats_message, parse_mode='HTML')
-                except Exception as e:
-                    print(f"Error en stats: {e}")
+                else:
                     bot.sendMessage(update.message.chat.id, 
-                                  '<b>❌ Error obteniendo estadísticas globales</b>', 
+                                  f'<b>❌ Usuario @{target_user} no encontrado</b>', 
                                   parse_mode='HTML')
+                    
+            except Exception as e:
+                print(f"Error en mystats: {e}")
+                bot.sendMessage(update.message.chat.id, 
+                              '<b>❌ Error obteniendo estadísticas</b>', 
+                              parse_mode='HTML')
+            return
+
+        if '/stats_user' in msgText:
+            if not isadmin:
+                bot.sendMessage(update.message.chat.id, 
+                              '<b>❌ Comando restringido a administradores</b>', 
+                              parse_mode='HTML')
                 return
             
-            # COMANDOS DE PROXY MEJORADOS (SOLO SOCKS)
-            if '/proxy_test' in msgText:
-                try:
+            try:
+                parts = msgText.split(' ')
+                if len(parts) < 2:
+                    bot.sendMessage(update.message.chat.id,
+                                  '<b>❌ Formato incorrecto</b>\n'
+                                  '<code>/stats_user @usuario</code>',
+                                  parse_mode='HTML')
+                    return
+                
+                target_user = parts[1].replace('@', '')
+                user_data = jdb.get_user(target_user)
+                if user_data:
+                    stats_message = get_user_stats(target_user, user_data)
+                    bot.sendMessage(update.message.chat.id, stats_message, parse_mode='HTML')
+                else:
+                    bot.sendMessage(update.message.chat.id, 
+                                  f'<b>❌ Usuario @{target_user} no encontrado</b>', 
+                                  parse_mode='HTML')
+                    
+            except Exception as e:
+                print(f"Error en stats_user: {e}")
+                bot.sendMessage(update.message.chat.id, 
+                              '<b>❌ Error obteniendo estadísticas del usuario</b>', 
+                              parse_mode='HTML')
+            return
+
+        if '/stats' in msgText:
+            if not isadmin:
+                bot.sendMessage(update.message.chat.id, 
+                              '<b>❌ Comando restringido a administradores</b>', 
+                              parse_mode='HTML')
+                return
+            
+            try:
+                stats_message = get_all_users_stats(jdb, username)
+                bot.sendMessage(update.message.chat.id, stats_message, parse_mode='HTML')
+            except Exception as e:
+                print(f"Error en stats: {e}")
+                bot.sendMessage(update.message.chat.id, 
+                              '<b>❌ Error obteniendo estadísticas globales</b>', 
+                              parse_mode='HTML')
+            return
+        
+        # COMANDOS DE PROXY MEJORADOS (SOLO SOCKS)
+        if '/proxy_test' in msgText:
+            try:
+                current_proxy = user_info.get('proxy', '')
+                current_platform = get_platform_name(user_info.get('moodle_host', ''))
+                
+                # Mostrar información inicial del test CON PLATAFORMA ACTUAL
+                if not current_proxy:
+                    initial_msg = f'<b>🧪 Probando conexión directa a {current_platform}...</b>\n\n'
+                else:
+                    initial_msg = f'<b>🧪 Probando proxy SOCKS en {current_platform}...</b>\n<code>{current_proxy}</code>\n\n'
+                
+                initial_msg += '<b>🔍 Verificando:</b>\n• Conexión al servidor Moodle\n• Autenticación\n• Estado del proxy SOCKS'
+                
+                message = bot.sendMessage(update.message.chat.id, initial_msg, parse_mode='HTML')
+                
+                # Realizar test COMPLETO a la Moodle ACTUAL
+                test_result = test_moodle_connection(user_info)
+                
+                # Construir mensaje de resultados detallado
+                if test_result['status'] == 'success':
+                    result_message = format_s1_message("✅ Test Completado", [
+                        f"🏫 Plataforma: {test_result['platform']}",
+                        f"🔌 Proxy: {'SOCKS' if test_result['proxy_used'] else 'Conexión directa'}",
+                        f"📡 Estado: Conexión exitosa",
+                        f"🔐 Autenticación: Correcta", 
+                        f"🌐 Servidor: {test_result.get('moodle_host', 'N/A')}",
+                        f"💡 Detalles: {test_result['details']}"
+                    ])
+                    
+                elif test_result['status'] == 'auth_error':
+                    result_message = format_s1_message("❌ Error de Autenticación", [
+                        f"🏫 Plataforma: {test_result['platform']}",
+                        f"🔌 Proxy: {'SOCKS' if test_result['proxy_used'] else 'Conexión directa'}", 
+                        f"📡 Estado: Servidor accesible",
+                        f"🔐 Autenticación: Falló",
+                        f"🌐 Servidor: {test_result.get('moodle_host', 'N/A')}",
+                        f"⚠️ Problema: {test_result['details']}",
+                        f"💡 Solución: Verifica usuario/contraseña"
+                    ])
+                    
+                elif test_result['status'] == 'proxy_error':
+                    result_message = format_s1_message("❌ Error de Conexión SOCKS", [
+                        f"🏫 Plataforma: {test_result['platform']}",
+                        f"🔌 Proxy: {'SOCKS CONFIGURADO' if test_result['proxy_used'] else 'Conexión directa'}",
+                        f"📡 Estado: Sin conexión",
+                        f"🔐 Autenticación: No probada", 
+                        f"🌐 Servidor: {test_result.get('moodle_host', 'N/A')}",
+                        f"⚠️ Problema: {test_result['details']}",
+                        f"💡 Solución: Cambia proxy SOCKS o usa /delproxy"
+                    ])
+                    
+                else:
+                    result_message = format_s1_message("❌ Error Desconocido", [
+                        f"🏫 Plataforma: {test_result['platform']}",
+                        f"🔌 Proxy: {'SOCKS' if test_result['proxy_used'] else 'Conexión directa'}",
+                        f"📡 Estado: Error inesperado",
+                        f"🔐 Autenticación: No probada",
+                        f"🌐 Servidor: {test_result.get('moodle_host', 'N/A')}",
+                        f"⚠️ Problema: {test_result['details']}",
+                        f"💡 Solución: Contacta al administrador"
+                    ])
+                
+                bot.editMessageText(message, result_message)
+                
+            except Exception as e:
+                bot.sendMessage(update.message.chat.id, 
+                               f'<b>❌ Error en el test:</b>\n<code>{str(e)}</code>', 
+                               parse_mode='HTML')
+            return
+
+        if '/delproxy' in msgText:
+            try:
+                old_proxy = user_info.get('proxy', '')
+                user_info['proxy'] = ''
+                jdb.save_data_user(username, user_info)
+                jdb.save()
+                
+                bot.sendMessage(update.message.chat.id,
+                    '<b>✅ Proxy eliminado</b>\n\n'
+                    f'<b>Proxy anterior:</b> <code>{old_proxy if old_proxy else "Ninguno"}</code>\n'
+                    f'<b>Estado actual:</b> Conexión directa\n\n'
+                    f'<b>Ahora se usará conexión directa al servidor</b>',
+                    parse_mode='HTML'
+                )
+            except Exception as e:
+                bot.sendMessage(update.message.chat.id, f'<b>❌ Error:</b> {str(e)}', parse_mode='HTML')
+            return
+
+        # COMANDO PROXY MEJORADO (SOLO SOCKS)
+        if '/proxy' in msgText:
+            try:
+                parts = msgText.split(' ', 1)
+                if len(parts) < 2:
+                    # Mostrar ayuda ACTUALIZADA solo para SOCKS
                     current_proxy = user_info.get('proxy', '')
+                    proxy_status = "✅ Configurado" if current_proxy else "❌ No configurado"
+                    
+                    # Obtener plataforma actual para el mensaje
                     current_platform = get_platform_name(user_info.get('moodle_host', ''))
                     
-                    # Mostrar información inicial del test CON PLATAFORMA ACTUAL
-                    if not current_proxy:
-                        initial_msg = f'<b>🧪 Probando conexión directa a {current_platform}...</b>\n\n'
-                    else:
-                        initial_msg = f'<b>🧪 Probando proxy SOCKS en {current_platform}...</b>\n<code>{current_proxy}</code>\n\n'
-                    
-                    initial_msg += '<b>🔍 Verificando:</b>\n• Conexión al servidor Moodle\n• Autenticación\n• Estado del proxy SOCKS'
-                    
-                    message = bot.sendMessage(update.message.chat.id, initial_msg, parse_mode='HTML')
-                    
-                    # Realizar test COMPLETO a la Moodle ACTUAL
-                    test_result = test_moodle_connection(user_info)
-                    
-                    # Construir mensaje de resultados detallado
-                    if test_result['status'] == 'success':
-                        result_message = format_s1_message("✅ Test Completado", [
-                            f"🏫 Plataforma: {test_result['platform']}",
-                            f"🔌 Proxy: {'SOCKS' if test_result['proxy_used'] else 'Conexión directa'}",
-                            f"📡 Estado: Conexión exitosa",
-                            f"🔐 Autenticación: Correcta", 
-                            f"🌐 Servidor: {test_result.get('moodle_host', 'N/A')}",
-                            f"💡 Detalles: {test_result['details']}"
-                        ])
-                        
-                    elif test_result['status'] == 'auth_error':
-                        result_message = format_s1_message("❌ Error de Autenticación", [
-                            f"🏫 Plataforma: {test_result['platform']}",
-                            f"🔌 Proxy: {'SOCKS' if test_result['proxy_used'] else 'Conexión directa'}", 
-                            f"📡 Estado: Servidor accesible",
-                            f"🔐 Autenticación: Falló",
-                            f"🌐 Servidor: {test_result.get('moodle_host', 'N/A')}",
-                            f"⚠️ Problema: {test_result['details']}",
-                            f"💡 Solución: Verifica usuario/contraseña"
-                        ])
-                        
-                    elif test_result['status'] == 'proxy_error':
-                        result_message = format_s1_message("❌ Error de Conexión SOCKS", [
-                            f"🏫 Plataforma: {test_result['platform']}",
-                            f"🔌 Proxy: {'SOCKS CONFIGURADO' if test_result['proxy_used'] else 'Conexión directa'}",
-                            f"📡 Estado: Sin conexión",
-                            f"🔐 Autenticación: No probada", 
-                            f"🌐 Servidor: {test_result.get('moodle_host', 'N/A')}",
-                            f"⚠️ Problema: {test_result['details']}",
-                            f"💡 Solución: Cambia proxy SOCKS o usa /delproxy"
-                        ])
-                        
-                    else:
-                        result_message = format_s1_message("❌ Error Desconocido", [
-                            f"🏫 Plataforma: {test_result['platform']}",
-                            f"🔌 Proxy: {'SOCKS' if test_result['proxy_used'] else 'Conexión directa'}",
-                            f"📡 Estado: Error inesperado",
-                            f"🔐 Autenticación: No probada",
-                            f"🌐 Servidor: {test_result.get('moodle_host', 'N/A')}",
-                            f"⚠️ Problema: {test_result['details']}",
-                            f"💡 Solución: Contacta al administrador"
-                        ])
-                    
-                    bot.editMessageText(message, result_message)
-                    
-                except Exception as e:
-                    bot.sendMessage(update.message.chat.id, 
-                                   f'<b>❌ Error en el test:</b>\n<code>{str(e)}</code>', 
-                                   parse_mode='HTML')
-                return
-
-            if '/delproxy' in msgText:
-                try:
-                    old_proxy = user_info.get('proxy', '')
-                    user_info['proxy'] = ''
-                    jdb.save_data_user(username, user_info)
-                    jdb.save()
-                    
                     bot.sendMessage(update.message.chat.id,
-                        '<b>✅ Proxy eliminado</b>\n\n'
-                        f'<b>Proxy anterior:</b> <code>{old_proxy if old_proxy else "Ninguno"}</code>\n'
-                        f'<b>Estado actual:</b> Conexión directa\n\n'
-                        f'<b>Ahora se usará conexión directa al servidor</b>',
+                        '<b>🔧 Configuración de Proxy SOCKS</b>\n\n'
+                        f'<b>🏫 Plataforma actual:</b> {current_platform}\n'
+                        f'<b>🔌 Proxy actual:</b> <code>{current_proxy if current_proxy else "Conexión directa"}</code>\n'
+                        f'<b>Estado:</b> {proxy_status}\n\n'
+                        '<b>🚫 Solo se aceptan proxies SOCKS:</b>\n'
+                        '<code>/proxy socks4://ip:puerto</code>\n'
+                        '<code>/proxy socks5://ip:puerto</code>\n\n'
+                        '<b>📋 Ejemplos SOCKS:</b>\n'
+                        '<code>/proxy socks4://190.6.65.2:1080</code>\n'
+                        '<code>/proxy socks5://201.234.122.100:1080</code>\n\n'
+                        '<b>🔍 Otros comandos:</b>\n'
+                        '<code>/proxy_test</code> - Probar proxy actual\n'
+                        '<code>/delproxy</code> - Usar conexión directa',
                         parse_mode='HTML'
                     )
-                except Exception as e:
-                    bot.sendMessage(update.message.chat.id, f'<b>❌ Error:</b> {str(e)}', parse_mode='HTML')
-                return
-
-            # COMANDO PROXY MEJORADO (SOLO SOCKS)
-            if '/proxy' in msgText:
-                try:
-                    parts = msgText.split(' ', 1)
-                    if len(parts) < 2:
-                        # Mostrar ayuda ACTUALIZADA solo para SOCKS
-                        current_proxy = user_info.get('proxy', '')
-                        proxy_status = "✅ Configurado" if current_proxy else "❌ No configurado"
-                        
-                        # Obtener plataforma actual para el mensaje
-                        current_platform = get_platform_name(user_info.get('moodle_host', ''))
-                        
-                        bot.sendMessage(update.message.chat.id,
-                            '<b>🔧 Configuración de Proxy SOCKS</b>\n\n'
-                            f'<b>🏫 Plataforma actual:</b> {current_platform}\n'
-                            f'<b>🔌 Proxy actual:</b> <code>{current_proxy if current_proxy else "Conexión directa"}</code>\n'
-                            f'<b>Estado:</b> {proxy_status}\n\n'
-                            '<b>🚫 Solo se aceptan proxies SOCKS:</b>\n'
-                            '<code>/proxy socks4://ip:puerto</code>\n'
-                            '<code>/proxy socks5://ip:puerto</code>\n\n'
-                            '<b>📋 Ejemplos SOCKS:</b>\n'
-                            '<code>/proxy socks4://190.6.65.2:1080</code>\n'
-                            '<code>/proxy socks5://201.234.122.100:1080</code>\n\n'
-                            '<b>🔍 Otros comandos:</b>\n'
-                            '<code>/proxy_test</code> - Probar proxy actual\n'
-                            '<code>/delproxy</code> - Usar conexión directa',
-                            parse_mode='HTML'
-                        )
-                        return
-                    
-                    proxy_url = parts[1].strip()
-                    old_proxy = user_info.get('proxy', '')
-                    
-                    # ✅ VALIDACIÓN: Solo permitir SOCKS4 y SOCKS5
-                    if proxy_url and not any(proto in proxy_url for proto in ['socks4://', 'socks5://']):
-                        bot.sendMessage(update.message.chat.id,
-                            '<b>❌ Formato de proxy NO permitido</b>\n\n'
-                            '<b>🚫 Solo se aceptan proxies SOCKS:</b>\n'
-                            '<code>socks4://ip:puerto</code>\n'
-                            '<code>socks5://ip:puerto</code>\n\n'
-                            '<b>📋 Ejemplos válidos:</b>\n'
-                            '<code>socks4://190.6.65.2:1080</code>\n'
-                            '<code>socks5://201.234.122.100:1080</code>\n\n'
-                            '<b>❌ NO se permiten:</b>\n'
-                            '<code>http://...</code>\n'
-                            '<code>https://...</code>',
-                            parse_mode='HTML'
-                        )
-                        return
-                    
-                    message = bot.sendMessage(update.message.chat.id, 
-                        f'<b>🔧 Configurando proxy SOCKS...</b>\n<code>{proxy_url}</code>\n\n'
-                        f'<b>🧪 Probando conexión a Moodle...</b>', 
-                        parse_mode='HTML'
-                    )
-                    
-                    # Configurar proxy temporalmente para el test
-                    test_user_info = user_info.copy()
-                    test_user_info['proxy'] = proxy_url
-                    
-                    # Hacer test COMPLETO con el nuevo proxy SOCKS
-                    test_result = test_moodle_connection(test_user_info)
-                    
-                    if test_result['status'] != 'success':
-                        # Si el test falla, ofrecer opciones
-                        bot.editMessageText(message,
-                            f'<b>❌ Proxy SOCKS no funciona</b>\n\n'
-                            f'<b>🏫 Plataforma:</b> {test_result["platform"]}\n'
-                            f'<b>🔌 Proxy:</b> <code>{proxy_url}</code>\n'
-                            f'<b>Estado:</b> {test_result["message"]}\n'
-                            f'<b>Detalles:</b> {test_result["details"]}\n\n'
-                            f'<b>¿Quieres guardarlo de todas formas?</b>\n'
-                            f'Responde <code>/confirm_proxy</code> para guardar\n'
-                            f'o configura otro proxy SOCKS',
-                            parse_mode='HTML'
-                        )
-                        user_info['temp_proxy'] = proxy_url
-                        jdb.save_data_user(username, user_info)
-                        jdb.save()
-                        return
-                    
-                    # Si el test es exitoso, guardar directamente
-                    user_info['proxy'] = proxy_url
-                    if 'temp_proxy' in user_info:
-                        del user_info['temp_proxy']
-                    jdb.save_data_user(username, user_info)
-                    jdb.save()
-                    
-                    bot.editMessageText(message,
-                        f'<b>✅ Proxy SOCKS configurado y verificado</b>\n\n'
-                        f'<b>🏫 Plataforma:</b> {test_result["platform"]}\n'
-                        f'<b>🔌 Proxy anterior:</b> <code>{old_proxy if old_proxy else "Ninguno"}</code>\n'
-                        f'<b>🔌 Proxy nuevo:</b> <code>{proxy_url}</code>\n'
-                        f'<b>📡 Estado:</b> ✅ Funcionando correctamente\n\n'
-                        f'<b>¡Proxy SOCKS listo para usar!</b>',
-                        parse_mode='HTML'
-                    )
-                    
-                except Exception as e:
-                    bot.sendMessage(update.message.chat.id, 
-                                   f'<b>❌ Error configurando proxy SOCKS:</b>\n<code>{str(e)}</code>', 
-                                   parse_mode='HTML')
-                return
-
-            # CONFIRMACIÓN DE PROXY (cuando no funciona pero se quiere guardar)
-            if '/confirm_proxy' in msgText:
-                try:
-                    temp_proxy = user_info.get('temp_proxy', '')
-                    if not temp_proxy:
-                        bot.sendMessage(update.message.chat.id, '<b>❌ No hay proxy temporal para confirmar</b>', parse_mode='HTML')
-                        return
-                    
-                    old_proxy = user_info.get('proxy', '')
-                    user_info['proxy'] = temp_proxy
-                    del user_info['temp_proxy']
-                    jdb.save_data_user(username, user_info)
-                    jdb.save()
-                    
-                    bot.sendMessage(update.message.chat.id,
-                        f'<b>⚠️ Proxy SOCKS guardado (sin verificación)</b>\n\n'
-                        f'<b>Proxy anterior:</b> <code>{old_proxy if old_proxy else "Ninguno"}</code>\n'
-                        f'<b>Proxy nuevo:</b> <code>{temp_proxy}</code>\n'
-                        f'<b>Estado:</b> ⚠️ Guardado sin verificación\n\n'
-                        f'<b>Puede que no funcione. Usa /proxy_test para verificar.</b>',
-                        parse_mode='HTML'
-                    )
-                except Exception as e:
-                    bot.sendMessage(update.message.chat.id, f'<b>❌ Error:</b> {str(e)}', parse_mode='HTML')
-                return
-
-            # COMANDOS DE CONFIGURACIÓN RÁPIDA PARA ADMIN
-            if '/moodle_eva' in msgText and isadmin:
-                user_info['moodle_host'] = 'https://eva.uo.edu.cu/'
-                user_info['moodle_user'] = 'eric.serrano'
-                user_info['moodle_password'] = 'Rulebreaker2316'
-                user_info['moodle_repo_id'] = 4
-                user_info['uploadtype'] = 'draft'
-                user_info['cloudtype'] = 'moodle'
-                user_info['zips'] = 99  # 99 MB para EVA
-                jdb.save_data_user(username, user_info)
-                jdb.save()
-                bot.sendMessage(update.message.chat.id, '<b>✅ Configurado para EVA</b>', parse_mode='HTML')
-                return
-
-            if '/moodle_cursos' in msgText and isadmin:
-                user_info['moodle_host'] = 'https://cursos.uo.edu.cu/'
-                user_info['moodle_user'] = 'eric.serrano'
-                user_info['moodle_password'] = 'Rulebreaker2316'
-                user_info['moodle_repo_id'] = 4
-                user_info['uploadtype'] = 'draft'
-                user_info['cloudtype'] = 'moodle'
-                user_info['zips'] = 99  # 99 MB para CURSOS
-                jdb.save_data_user(username, user_info)
-                jdb.save()
-                bot.sendMessage(update.message.chat.id, '<b>✅ Configurado para CURSOS</b>', parse_mode='HTML')
-                return
-
-            if '/moodle_cened' in msgText and isadmin:
-                user_info['moodle_host'] = 'https://aulacened.uci.cu/'
-                user_info['moodle_user'] = 'eliel21'
-                user_info['moodle_password'] = 'ElielThali2115.'
-                user_info['moodle_repo_id'] = 5
-                user_info['uploadtype'] = 'draft'
-                user_info['cloudtype'] = 'moodle'
-                user_info['zips'] = 100  # 100 MB para CENED
-                jdb.save_data_user(username, user_info)
-                jdb.save()
-                bot.sendMessage(update.message.chat.id, '<b>✅ Configurado para CENED</b>', parse_mode='HTML')
-                return
-
-            # NUEVO COMANDO - CONFIGURACIÓN INSTEC
-            if '/moodle_instec' in msgText and isadmin:
-                user_info['moodle_host'] = 'https://moodle.instec.cu/'
-                user_info['moodle_user'] = 'Kevin.cruz'
-                user_info['moodle_password'] = 'Kevin10.'
-                user_info['moodle_repo_id'] = 3
-                user_info['uploadtype'] = 'draft'
-                user_info['cloudtype'] = 'moodle'
-                user_info['zips'] = 100  # ✅ 100 MB para INSTEC
-                jdb.save_data_user(username, user_info)
-                jdb.save()
-                bot.sendMessage(update.message.chat.id, '<b>✅ Configurado para INSTEC</b>', parse_mode='HTML')
-                return
-            
-            # COMANDO ADDUSERCONFIG MEJORADO - Agrega y configura usuarios
-            if '/adduserconfig' in msgText:
-                isadmin = jdb.is_admin(username)
-                if isadmin:
-                    try:
-                        # Formato: /adduserconfig usuario1,usuario2 [eva|cursos|cened|instec]
-                        parts = str(msgText).split(' ', 2)
-                        if len(parts) < 3:
-                            bot.sendMessage(update.message.chat.id,
-                                           '<b>❌ Formato incorrecto</b>\n\n'
-                                           '<b>Formatos válidos:</b>\n'
-                                           '<code>/adduserconfig usuario eva</code>\n'
-                                           '<code>/adduserconfig usuario1,usuario2 cursos</code>\n'
-                                           '<code>/adduserconfig usuario cened</code>\n'
-                                           '<code>/adduserconfig usuario instec</code>',
-                                           parse_mode='HTML')
-                            return
-                        
-                        target_users_text = parts[1]
-                        platform = parts[2].strip().lower()
-                        
-                        # CONFIGURACIONES PREDEFINIDAS
-                        configs = {
-                            'eva': {
-                                'host': 'https://eva.uo.edu.cu/',
-                                'user': 'eric.serrano',
-                                'password': 'Rulebreaker2316',
-                                'repo_id': 4,
-                                'uptype': 'draft',
-                                'name': 'EVA UO',
-                                'zips': 99  # 99 MB para EVA
-                            },
-                            'cursos': {
-                                'host': 'https://cursos.uo.edu.cu/',
-                                'user': 'eric.serrano', 
-                                'password': 'Rulebreaker2316',
-                                'repo_id': 4,
-                                'uptype': 'draft',
-                                'name': 'CURSOS UO',
-                                'zips': 99  # 99 MB para CURSOS
-                            },
-                            'cened': {
-                                'host': 'https://aulacened.uci.cu/',
-                                'user': 'eliel21',
-                                'password': 'ElielThali2115.',
-                                'repo_id': 5,
-                                'uptype': 'draft',
-                                'name': 'CENED',
-                                'zips': 100  # 100 MB para CENED
-                            },
-                            'instec': {  # NUEVA CONFIGURACIÓN
-                                'host': 'https://moodle.instec.cu/',
-                                'user': 'Kevin.cruz',
-                                'password': 'Kevin10.',
-                                'repo_id': 3,
-                                'uptype': 'draft',
-                                'name': 'INSTEC',
-                                'zips': 100  # ✅ 100 MB para INSTEC
-                            }
-                        }
-                        
-                        # Validar plataforma
-                        if platform not in configs:
-                            bot.sendMessage(update.message.chat.id,
-                                           '<b>❌ Plataforma no válida</b>\n'
-                                           '<b>Opciones:</b> eva, cursos, cened, instec',
-                                           parse_mode='HTML')
-                            return
-                        
-                        # Procesar múltiples usuarios (con @ o sin @)
-                        raw_users = [user.strip() for user in target_users_text.split(',')]
-                        target_users = []
-                        for user in raw_users:
-                            if user:
-                                # Agregar @ si no lo tiene
-                                if not user.startswith('@'):
-                                    user = '@' + user
-                                target_users.append(user)
-                        
-                        config = configs[platform]
-                        
-                        configured_users = []
-                        existing_users = []
-                        
-                        for target_user in target_users:
-                            if not target_user:
-                                continue
-                                
-                            # Prevenir auto-configuración del admin
-                            if target_user == f'@{username}':
-                                continue
-                            
-                            username_clean = target_user.replace('@', '')
-                            
-                            # Verificar si el usuario ya existe
-                            if jdb.get_user(username_clean):
-                                existing_users.append(target_user)
-                                continue
-                            
-                            # Crear usuario nuevo
-                            jdb.create_user(username_clean)
-                            
-                            # Obtener y configurar usuario
-                            new_user_info = jdb.get_user(username_clean)
-                            new_user_info['moodle_host'] = config['host']
-                            new_user_info['moodle_user'] = config['user']
-                            new_user_info['moodle_password'] = config['password']
-                            new_user_info['moodle_repo_id'] = config['repo_id']
-                            new_user_info['uploadtype'] = config['uptype']
-                            new_user_info['cloudtype'] = 'moodle'
-                            new_user_info['zips'] = config['zips']
-                            new_user_info['tokenize'] = 0
-                            new_user_info['proxy'] = ''
-                            new_user_info['dir'] = '/'
-                            
-                            jdb.save_data_user(username_clean, new_user_info)
-                            configured_users.append(target_user)
-                        
-                        jdb.save()
-                        
-                        # Construir mensaje de resultado
-                        message_parts = []
-                        
-                        if configured_users:
-                            if len(configured_users) == 1:
-                                user_msg = format_s1_message("✅ Usuario Agregado y Configurado", [
-                                    f"👤 Usuario: {configured_users[0]}",
-                                    f"🏫 Plataforma: {config['name']}"
-                                ])
-                                message_parts.append(user_msg)
-                            else:
-                                users_list = ', '.join(configured_users)
-                                message_parts.append(f'<b>✅ Usuarios agregados y configurados:</b> {users_list}\n<b>Plataforma:</b> {config["name"]}')
-                        
-                        if existing_users:
-                            if len(existing_users) == 1:
-                                message_parts.append(f'<b>⚠️ Usuario ya existente:</b> {existing_users[0]}')
-                            else:
-                                users_list = ', '.join(existing_users)
-                                message_parts.append(f'<b>⚠️ Usuarios ya existentes:</b> {users_list}')
-                        
-                        if message_parts:
-                            final_message = '\n\n'.join(message_parts)
-                        else:
-                            final_message = '<b>❌ No se agregaron usuarios</b>'
-                            
-                        bot.sendMessage(update.message.chat.id, final_message, parse_mode='HTML')
-                        
-                    except Exception as e:
-                        print(f"Error en adduserconfig: {e}")
-                        bot.sendMessage(update.message.chat.id,
-                                       '<b>❌ Error en el comando</b>\n'
-                                       '<code>/adduserconfig usuario plataforma</code>',
-                                       parse_mode='HTML')
-                else:
-                    bot.sendMessage(update.message.chat.id,'<b>❌ No tiene permisos de administrador</b>', parse_mode='HTML')
-                return
-
-            # BLOQUEAR COMANDOS DE ADMIN PARA USUARIOS NORMALES
-            if not isadmin and is_text and any(cmd in msgText for cmd in [
-                '/zips', '/account', '/host', '/repoid', '/tokenize', 
-                '/cloud', '/uptype', '/dir', '/myuser', 
-                '/files', '/txt_', '/del_', '/delall', '/adduserconfig', 
-                '/banuser', '/getdb', '/moodle_eva', '/moodle_cursos', '/moodle_cened', '/moodle_instec',
-                '/stats_user', '/stats'  # ✅ NUEVOS COMANDOS BLOQUEADOS
-            ]):
-                bot.sendMessage(update.message.chat.id,
-                               "<b>🚫 Acceso Restringido</b>\n\n"
-                               "Los comandos de configuración están disponibles solo para administradores.\n\n"
-                               "<b>✅ Comandos disponibles para ti:</b>\n"
-                               "• /start - Información del bot\n"
-                               "• /tutorial - Guía de uso completo\n"
-                               "• /mystats - Tus estadísticas\n"
-                               "• /proxy - Configurar proxy SOCKS\n"
-                               "• /proxy_test - Probar proxy actual\n"
-                               "• /delproxy - Usar conexión directa\n"
-                               "• Enlaces HTTP/HTTPS para subir archivos",
-                               parse_mode='HTML')
-                return
-
-            # MENSAJE PARA TEXTO SIN COMANDOS NI URLS
-            if is_text and not msgText.startswith('/') and not 'http' in msgText:
-                bot.sendMessage(update.message.chat.id,
-                               "<b>🤖 Bot de Subida de Archivos</b>\n\n"
-                               "📤 <b>Para subir archivos:</b> Envía un enlace HTTP/HTTPS\n\n"
-                               "🔧 <b>Comandos de Proxy:</b>\n"
-                               "• /proxy - Configurar proxy SOCKS\n"
-                               "• /proxy_test - Probar conexión\n"
-                               "• /delproxy - Conexión directa\n\n"
-                               "📊 <b>Comandos de Estadísticas:</b>\n"
-                               "• /mystats - Ver tus estadísticas\n\n"
-                               "📝 <b>Para ver comandos disponibles:</b> Usa /start",
-                               parse_mode='HTML')
-                return
-
-            # COMANDO BANUSER
-            if '/banuser' in msgText:
-                isadmin = jdb.is_admin(username)
-                if isadmin:
-                    try:
-                        users_text = str(msgText).split(' ', 1)[1]
-                        
-                        # Procesar múltiples usuarios (con @ o sin @)
-                        raw_users = [user.strip() for user in users_text.split(',')]
-                        target_users = []
-                        for user in raw_users:
-                            if user:
-                                # Agregar @ si no lo tiene
-                                if not user.startswith('@'):
-                                    user = '@' + user
-                                target_users.append(user)
-                        
-                        banned_users = []
-                        not_found_users = []
-                        self_ban_attempt = False
-                        
-                        for target_user in target_users:
-                            if target_user:
-                                if target_user == f'@{username}':
-                                    self_ban_attempt = True
-                                    continue
-                                username_clean = target_user.replace('@', '')
-                                if jdb.get_user(username_clean):
-                                    jdb.remove(username_clean)
-                                    banned_users.append(target_user)
-                                else:
-                                    not_found_users.append(target_user)
-                        
-                        jdb.save()
-                        
-                        message_parts = []
-                        
-                        if banned_users:
-                            if len(banned_users) == 1:
-                                message_parts.append(f'<b>🚫 Usuario baneado:</b> {banned_users[0]}')
-                            else:
-                                users_list = ', '.join(banned_users)
-                                message_parts.append(f'<b>🚫 Usuarios baneados:</b> {users_list}')
-                        
-                        if not_found_users:
-                            if len(not_found_users) == 1:
-                                message_parts.append(f'<b>❌ Usuario no encontrado:</b> {not_found_users[0]}')
-                            else:
-                                users_list = ', '.join(not_found_users)
-                                message_parts.append(f'<b>❌ Usuarios no encontrados:</b> {users_list}')
-                        
-                        if self_ban_attempt:
-                            message_parts.append('<b>⚠️ No puedes banearte a ti mismo</b>')
-                        
-                        if message_parts:
-                            final_message = '\n\n'.join(message_parts)
-                        else:
-                            final_message = '<b>❌ No se proporcionaron usuarios válidos</b>'
-                            
-                        bot.sendMessage(update.message.chat.id, final_message, parse_mode='HTML')
-                        
-                    except Exception as e:
-                        print(f"Error en banuser: {e}")
-                        bot.sendMessage(update.message.chat.id,
-                                       '<b>❌ Error en el comando:</b>\n'
-                                       '<code>/banuser user1, user2, user3</code>\n\n'
-                                       '<b>Ejemplos:</b>\n'
-                                       '<code>/banuser juan</code>\n'
-                                       '<code>/banuser juan, maria, pedro</code>', 
-                                       parse_mode='HTML')
-                else:
-                    bot.sendMessage(update.message.chat.id,'<b>❌ No tiene permisos de administrador</b>', parse_mode='HTML')
-                return
-
-            if '/getdb' in msgText:
-                isadmin = jdb.is_admin(username)
-                if isadmin:
-                    bot.sendMessage(update.message.chat.id,'<b>📦 Base de datos:</b>', parse_mode='HTML')
-                    bot.sendFile(update.message.chat.id,'database.jdb')
-                else:
-                    bot.sendMessage(update.message.chat.id,'<b>❌ No tiene permisos de administrador</b>', parse_mode='HTML')
-                return
-
-            # COMANDO TUTORIAL (LEE DESDE ARCHIVO)
-            if '/tutorial' in msgText:
-                try:
-                    tuto = open('tuto.txt','r', encoding='utf-8')
-                    tutorial_content = tuto.read()
-                    tuto.close()
-                    bot.sendMessage(update.message.chat.id, tutorial_content)
-                except Exception as e:
-                    print(f"Error cargando tutorial: {e}")
-                    bot.sendMessage(update.message.chat.id,'<b>📚 Archivo de tutorial no disponible</b>', parse_mode='HTML')
-                return
-
-            # COMANDOS DE USUARIO (SOLO PARA ADMINISTRADOR)
-            if '/myuser' in msgText:
-                if not isadmin:
-                    bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
                     return
+                
+                proxy_url = parts[1].strip()
+                old_proxy = user_info.get('proxy', '')
+                
+                # ✅ VALIDACIÓN: Solo permitir SOCKS4 y SOCKS5
+                if proxy_url and not any(proto in proxy_url for proto in ['socks4://', 'socks5://']):
+                    bot.sendMessage(update.message.chat.id,
+                        '<b>❌ Formato de proxy NO permitido</b>\n\n'
+                        '<b>🚫 Solo se aceptan proxies SOCKS:</b>\n'
+                        '<code>socks4://ip:puerto</code>\n'
+                        '<code>socks5://ip:puerto</code>\n\n'
+                        '<b>📋 Ejemplos válidos:</b>\n'
+                        '<code>socks4://190.6.65.2:1080</code>\n'
+                        '<code>socks5://201.234.122.100:1080</code>\n\n'
+                        '<b>❌ NO se permiten:</b>\n'
+                        '<code>http://...</code>\n'
+                        '<code>https://...</code>',
+                        parse_mode='HTML'
+                    )
+                    return
+                
+                message = bot.sendMessage(update.message.chat.id, 
+                    f'<b>🔧 Configurando proxy SOCKS...</b>\n<code>{proxy_url}</code>\n\n'
+                    f'<b>🧪 Probando conexión a Moodle...</b>', 
+                    parse_mode='HTML'
+                )
+                
+                # Configurar proxy temporalmente para el test
+                test_user_info = user_info.copy()
+                test_user_info['proxy'] = proxy_url
+                
+                # Hacer test COMPLETO con el nuevo proxy SOCKS
+                test_result = test_moodle_connection(test_user_info)
+                
+                if test_result['status'] != 'success':
+                    # Si el test falla, ofrecer opciones
+                    bot.editMessageText(message,
+                        f'<b>❌ Proxy SOCKS no funciona</b>\n\n'
+                        f'<b>🏫 Plataforma:</b> {test_result["platform"]}\n'
+                        f'<b>🔌 Proxy:</b> <code>{proxy_url}</code>\n'
+                        f'<b>Estado:</b> {test_result["message"]}\n'
+                        f'<b>Detalles:</b> {test_result["details"]}\n\n'
+                        f'<b>¿Quieres guardarlo de todas formas?</b>\n'
+                        f'Responde <code>/confirm_proxy</code> para guardar\n'
+                        f'o configura otro proxy SOCKS',
+                        parse_mode='HTML'
+                    )
+                    user_info['temp_proxy'] = proxy_url
+                    jdb.save_data_user(username, user_info)
+                    jdb.save()
+                    return
+                
+                # Si el test es exitoso, guardar directamente
+                user_info['proxy'] = proxy_url
+                if 'temp_proxy' in user_info:
+                    del user_info['temp_proxy']
+                jdb.save_data_user(username, user_info)
+                jdb.save()
+                
+                bot.editMessageText(message,
+                    f'<b>✅ Proxy SOCKS configurado y verificado</b>\n\n'
+                    f'<b>🏫 Plataforma:</b> {test_result["platform"]}\n'
+                    f'<b>🔌 Proxy anterior:</b> <code>{old_proxy if old_proxy else "Ninguno"}</code>\n'
+                    f'<b>🔌 Proxy nuevo:</b> <code>{proxy_url}</code>\n'
+                    f'<b>📡 Estado:</b> ✅ Funcionando correctamente\n\n'
+                    f'<b>¡Proxy SOCKS listo para usar!</b>',
+                    parse_mode='HTML'
+                )
+                
+            except Exception as e:
+                bot.sendMessage(update.message.chat.id, 
+                               f'<b>❌ Error configurando proxy SOCKS:</b>\n<code>{str(e)}</code>', 
+                               parse_mode='HTML')
+            return
+
+        # CONFIRMACIÓN DE PROXY (cuando no funciona pero se quiere guardar)
+        if '/confirm_proxy' in msgText:
+            try:
+                temp_proxy = user_info.get('temp_proxy', '')
+                if not temp_proxy:
+                    bot.sendMessage(update.message.chat.id, '<b>❌ No hay proxy temporal para confirmar</b>', parse_mode='HTML')
+                    return
+                
+                old_proxy = user_info.get('proxy', '')
+                user_info['proxy'] = temp_proxy
+                del user_info['temp_proxy']
+                jdb.save_data_user(username, user_info)
+                jdb.save()
+                
+                bot.sendMessage(update.message.chat.id,
+                    f'<b>⚠️ Proxy SOCKS guardado (sin verificación)</b>\n\n'
+                    f'<b>Proxy anterior:</b> <code>{old_proxy if old_proxy else "Ninguno"}</code>\n'
+                    f'<b>Proxy nuevo:</b> <code>{temp_proxy}</code>\n'
+                    f'<b>Estado:</b> ⚠️ Guardado sin verificación\n\n'
+                    f'<b>Puede que no funcione. Usa /proxy_test para verificar.</b>',
+                    parse_mode='HTML'
+                )
+            except Exception as e:
+                bot.sendMessage(update.message.chat.id, f'<b>❌ Error:</b> {str(e)}', parse_mode='HTML')
+            return
+
+        # ... (el resto de tu código existente se mantiene igual)
+        # COMANDOS DE CONFIGURACIÓN RÁPIDA PARA ADMIN
+        if '/moodle_eva' in msgText and isadmin:
+            user_info['moodle_host'] = 'https://eva.uo.edu.cu/'
+            user_info['moodle_user'] = 'eric.serrano'
+            user_info['moodle_password'] = 'Rulebreaker2316'
+            user_info['moodle_repo_id'] = 4
+            user_info['uploadtype'] = 'draft'
+            user_info['cloudtype'] = 'moodle'
+            user_info['zips'] = 99  # 99 MB para EVA
+            jdb.save_data_user(username, user_info)
+            jdb.save()
+            bot.sendMessage(update.message.chat.id, '<b>✅ Configurado para EVA</b>', parse_mode='HTML')
+            return
+
+        if '/moodle_cursos' in msgText and isadmin:
+            user_info['moodle_host'] = 'https://cursos.uo.edu.cu/'
+            user_info['moodle_user'] = 'eric.serrano'
+            user_info['moodle_password'] = 'Rulebreaker2316'
+            user_info['moodle_repo_id'] = 4
+            user_info['uploadtype'] = 'draft'
+            user_info['cloudtype'] = 'moodle'
+            user_info['zips'] = 99  # 99 MB para CURSOS
+            jdb.save_data_user(username, user_info)
+            jdb.save()
+            bot.sendMessage(update.message.chat.id, '<b>✅ Configurado para CURSOS</b>', parse_mode='HTML')
+            return
+
+        if '/moodle_cened' in msgText and isadmin:
+            user_info['moodle_host'] = 'https://aulacened.uci.cu/'
+            user_info['moodle_user'] = 'eliel21'
+            user_info['moodle_password'] = 'ElielThali2115.'
+            user_info['moodle_repo_id'] = 5
+            user_info['uploadtype'] = 'draft'
+            user_info['cloudtype'] = 'moodle'
+            user_info['zips'] = 100  # 100 MB para CENED
+            jdb.save_data_user(username, user_info)
+            jdb.save()
+            bot.sendMessage(update.message.chat.id, '<b>✅ Configurado para CENED</b>', parse_mode='HTML')
+            return
+
+        # NUEVO COMANDO - CONFIGURACIÓN INSTEC
+        if '/moodle_instec' in msgText and isadmin:
+            user_info['moodle_host'] = 'https://moodle.instec.cu/'
+            user_info['moodle_user'] = 'Kevin.cruz'
+            user_info['moodle_password'] = 'Kevin10.'
+            user_info['moodle_repo_id'] = 3
+            user_info['uploadtype'] = 'draft'
+            user_info['cloudtype'] = 'moodle'
+            user_info['zips'] = 100  # ✅ 100 MB para INSTEC
+            jdb.save_data_user(username, user_info)
+            jdb.save()
+            bot.sendMessage(update.message.chat.id, '<b>✅ Configurado para INSTEC</b>', parse_mode='HTML')
+            return
+        
+        # COMANDO ADDUSERCONFIG MEJORADO - Agrega y configura usuarios
+        if '/adduserconfig' in msgText:
+            isadmin = jdb.is_admin(username)
+            if isadmin:
+                try:
+                    # Formato: /adduserconfig usuario1,usuario2 [eva|cursos|cened|instec]
+                    parts = str(msgText).split(' ', 2)
+                    if len(parts) < 3:
+                        bot.sendMessage(update.message.chat.id,
+                                       '<b>❌ Formato incorrecto</b>\n\n'
+                                       '<b>Formatos válidos:</b>\n'
+                                       '<code>/adduserconfig usuario eva</code>\n'
+                                       '<code>/adduserconfig usuario1,usuario2 cursos</code>\n'
+                                       '<code>/adduserconfig usuario cened</code>\n'
+                                       '<code>/adduserconfig usuario instec</code>',
+                                       parse_mode='HTML')
+                        return
+                    
+                    target_users_text = parts[1]
+                    platform = parts[2].strip().lower()
+                    
+                    # CONFIGURACIONES PREDEFINIDAS
+                    configs = {
+                        'eva': {
+                            'host': 'https://eva.uo.edu.cu/',
+                            'user': 'eric.serrano',
+                            'password': 'Rulebreaker2316',
+                            'repo_id': 4,
+                            'uptype': 'draft',
+                            'name': 'EVA UO',
+                            'zips': 99  # 99 MB para EVA
+                        },
+                        'cursos': {
+                            'host': 'https://cursos.uo.edu.cu/',
+                            'user': 'eric.serrano', 
+                            'password': 'Rulebreaker2316',
+                            'repo_id': 4,
+                            'uptype': 'draft',
+                            'name': 'CURSOS UO',
+                            'zips': 99  # 99 MB para CURSOS
+                        },
+                        'cened': {
+                            'host': 'https://aulacened.uci.cu/',
+                            'user': 'eliel21',
+                            'password': 'ElielThali2115.',
+                            'repo_id': 5,
+                            'uptype': 'draft',
+                            'name': 'CENED',
+                            'zips': 100  # 100 MB para CENED
+                        },
+                        'instec': {  # NUEVA CONFIGURACIÓN
+                            'host': 'https://moodle.instec.cu/',
+                            'user': 'Kevin.cruz',
+                            'password': 'Kevin10.',
+                            'repo_id': 3,
+                            'uptype': 'draft',
+                            'name': 'INSTEC',
+                            'zips': 100  # ✅ 100 MB para INSTEC
+                        }
+                    }
+                    
+                    # Validar plataforma
+                    if platform not in configs:
+                        bot.sendMessage(update.message.chat.id,
+                                       '<b>❌ Plataforma no válida</b>\n'
+                                       '<b>Opciones:</b> eva, cursos, cened, instec',
+                                       parse_mode='HTML')
+                        return
+                    
+                    # Procesar múltiples usuarios (con @ o sin @)
+                    raw_users = [user.strip() for user in target_users_text.split(',')]
+                    target_users = []
+                    for user in raw_users:
+                        if user:
+                            # Agregar @ si no lo tiene
+                            if not user.startswith('@'):
+                                user = '@' + user
+                            target_users.append(user)
+                    
+                    config = configs[platform]
+                    
+                    configured_users = []
+                    existing_users = []
+                    
+                    for target_user in target_users:
+                        if not target_user:
+                            continue
+                            
+                        # Prevenir auto-configuración del admin
+                        if target_user == f'@{username}':
+                            continue
+                        
+                        username_clean = target_user.replace('@', '')
+                        
+                        # Verificar si el usuario ya existe
+                        if jdb.get_user(username_clean):
+                            existing_users.append(target_user)
+                            continue
+                        
+                        # Crear usuario nuevo
+                        jdb.create_user(username_clean)
+                        
+                        # Obtener y configurar usuario
+                        new_user_info = jdb.get_user(username_clean)
+                        new_user_info['moodle_host'] = config['host']
+                        new_user_info['moodle_user'] = config['user']
+                        new_user_info['moodle_password'] = config['password']
+                        new_user_info['moodle_repo_id'] = config['repo_id']
+                        new_user_info['uploadtype'] = config['uptype']
+                        new_user_info['cloudtype'] = 'moodle'
+                        new_user_info['zips'] = config['zips']
+                        new_user_info['tokenize'] = 0
+                        new_user_info['proxy'] = ''
+                        new_user_info['dir'] = '/'
+                        
+                        jdb.save_data_user(username_clean, new_user_info)
+                        configured_users.append(target_user)
+                    
+                    jdb.save()
+                    
+                    # Construir mensaje de resultado
+                    message_parts = []
+                    
+                    if configured_users:
+                        if len(configured_users) == 1:
+                            user_msg = format_s1_message("✅ Usuario Agregado y Configurado", [
+                                f"👤 Usuario: {configured_users[0]}",
+                                f"🏫 Plataforma: {config['name']}"
+                            ])
+                            message_parts.append(user_msg)
+                        else:
+                            users_list = ', '.join(configured_users)
+                            message_parts.append(f'<b>✅ Usuarios agregados y configurados:</b> {users_list}\n<b>Plataforma:</b> {config["name"]}')
+                    
+                    if existing_users:
+                        if len(existing_users) == 1:
+                            message_parts.append(f'<b>⚠️ Usuario ya existente:</b> {existing_users[0]}')
+                        else:
+                            users_list = ', '.join(existing_users)
+                            message_parts.append(f'<b>⚠️ Usuarios ya existentes:</b> {users_list}')
+                    
+                    if message_parts:
+                        final_message = '\n\n'.join(message_parts)
+                    else:
+                        final_message = '<b>❌ No se agregaron usuarios</b>'
+                        
+                    bot.sendMessage(update.message.chat.id, final_message, parse_mode='HTML')
+                    
+                except Exception as e:
+                    print(f"Error en adduserconfig: {e}")
+                    bot.sendMessage(update.message.chat.id,
+                                   '<b>❌ Error en el comando</b>\n'
+                                   '<code>/adduserconfig usuario plataforma</code>',
+                                   parse_mode='HTML')
+            else:
+                bot.sendMessage(update.message.chat.id,'<b>❌ No tiene permisos de administrador</b>', parse_mode='HTML')
+            return
+
+        # BLOQUEAR COMANDOS DE ADMIN PARA USUARIOS NORMALES
+        if not isadmin and is_text and any(cmd in msgText for cmd in [
+            '/zips', '/account', '/host', '/repoid', '/tokenize', 
+            '/cloud', '/uptype', '/dir', '/myuser', 
+            '/files', '/txt_', '/del_', '/delall', '/adduserconfig', 
+            '/banuser', '/getdb', '/moodle_eva', '/moodle_cursos', '/moodle_cened', '/moodle_instec',
+            '/stats_user', '/stats'  # ✅ NUEVOS COMANDOS BLOQUEADOS
+        ]):
+            bot.sendMessage(update.message.chat.id,
+                           "<b>🚫 Acceso Restringido</b>\n\n"
+                           "Los comandos de configuración están disponibles solo para administradores.\n\n"
+                           "<b>✅ Comandos disponibles para ti:</b>\n"
+                           "• /start - Información del bot\n"
+                           "• /tutorial - Guía de uso completo\n"
+                           "• /mystats - Tus estadísticas\n"
+                           "• /proxy - Configurar proxy SOCKS\n"
+                           "• /proxy_test - Probar proxy actual\n"
+                           "• /delproxy - Usar conexión directa\n"
+                           "• Enlaces HTTP/HTTPS para subir archivos",
+                           parse_mode='HTML')
+            return
+
+        # MENSAJE PARA TEXTO SIN COMANDOS NI URLS
+        if is_text and not msgText.startswith('/') and not 'http' in msgText:
+            bot.sendMessage(update.message.chat.id,
+                           "<b>🤖 Bot de Subida de Archivos</b>\n\n"
+                           "📤 <b>Para subir archivos:</b> Envía un enlace HTTP/HTTPS\n\n"
+                           "🔧 <b>Comandos de Proxy:</b>\n"
+                           "• /proxy - Configurar proxy SOCKS\n"
+                           "• /proxy_test - Probar conexión\n"
+                           "• /delproxy - Conexión directa\n\n"
+                           "📊 <b>Comandos de Estadísticas:</b>\n"
+                           "• /mystats - Ver tus estadísticas\n\n"
+                           "📝 <b>Para ver comandos disponibles:</b> Usa /start",
+                           parse_mode='HTML')
+            return
+
+        # COMANDO BANUSER
+        if '/banuser' in msgText:
+            isadmin = jdb.is_admin(username)
+            if isadmin:
+                try:
+                    users_text = str(msgText).split(' ', 1)[1]
+                    
+                    # Procesar múltiples usuarios (con @ o sin @)
+                    raw_users = [user.strip() for user in users_text.split(',')]
+                    target_users = []
+                    for user in raw_users:
+                        if user:
+                            # Agregar @ si no lo tiene
+                            if not user.startswith('@'):
+                                user = '@' + user
+                            target_users.append(user)
+                    
+                    banned_users = []
+                    not_found_users = []
+                    self_ban_attempt = False
+                    
+                    for target_user in target_users:
+                        if target_user:
+                            if target_user == f'@{username}':
+                                self_ban_attempt = True
+                                continue
+                            username_clean = target_user.replace('@', '')
+                            if jdb.get_user(username_clean):
+                                jdb.remove(username_clean)
+                                banned_users.append(target_user)
+                            else:
+                                not_found_users.append(target_user)
+                    
+                    jdb.save()
+                    
+                    message_parts = []
+                    
+                    if banned_users:
+                        if len(banned_users) == 1:
+                            message_parts.append(f'<b>🚫 Usuario baneado:</b> {banned_users[0]}')
+                        else:
+                            users_list = ', '.join(banned_users)
+                            message_parts.append(f'<b>🚫 Usuarios baneados:</b> {users_list}')
+                    
+                    if not_found_users:
+                        if len(not_found_users) == 1:
+                            message_parts.append(f'<b>❌ Usuario no encontrado:</b> {not_found_users[0]}')
+                        else:
+                            users_list = ', '.join(not_found_users)
+                            message_parts.append(f'<b>❌ Usuarios no encontrados:</b> {users_list}')
+                    
+                    if self_ban_attempt:
+                        message_parts.append('<b>⚠️ No puedes banearte a ti mismo</b>')
+                    
+                    if message_parts:
+                        final_message = '\n\n'.join(message_parts)
+                    else:
+                        final_message = '<b>❌ No se proporcionaron usuarios válidos</b>'
+                        
+                    bot.sendMessage(update.message.chat.id, final_message, parse_mode='HTML')
+                    
+                except Exception as e:
+                    print(f"Error en banuser: {e}")
+                    bot.sendMessage(update.message.chat.id,
+                                   '<b>❌ Error en el comando:</b>\n'
+                                   '<code>/banuser user1, user2, user3</code>\n\n'
+                                   '<b>Ejemplos:</b>\n'
+                                   '<code>/banuser juan</code>\n'
+                                   '<code>/banuser juan, maria, pedro</code>', 
+                                   parse_mode='HTML')
+            else:
+                bot.sendMessage(update.message.chat.id,'<b>❌ No tiene permisos de administrador</b>', parse_mode='HTML')
+            return
+
+        if '/getdb' in msgText:
+            isadmin = jdb.is_admin(username)
+            if isadmin:
+                bot.sendMessage(update.message.chat.id,'<b>📦 Base de datos:</b>', parse_mode='HTML')
+                bot.sendFile(update.message.chat.id,'database.jdb')
+            else:
+                bot.sendMessage(update.message.chat.id,'<b>❌ No tiene permisos de administrador</b>', parse_mode='HTML')
+            return
+
+        # COMANDO TUTORIAL (LEE DESDE ARCHIVO)
+        if '/tutorial' in msgText:
+            try:
+                tuto = open('tuto.txt','r', encoding='utf-8')
+                tutorial_content = tuto.read()
+                tuto.close()
+                bot.sendMessage(update.message.chat.id, tutorial_content)
+            except Exception as e:
+                print(f"Error cargando tutorial: {e}")
+                bot.sendMessage(update.message.chat.id,'<b>📚 Archivo de tutorial no disponible</b>', parse_mode='HTML')
+            return
+
+        # COMANDOS DE USUARIO (SOLO PARA ADMINISTRADOR)
+        if '/myuser' in msgText:
+            if not isadmin:
+                bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
+                return
+            getUser = user_info
+            if getUser:
+                statInfo = infos.createStat(username,getUser,jdb.is_admin(username))
+                bot.sendMessage(update.message.chat.id,statInfo, parse_mode='HTML')
+                return
+        if '/zips' in msgText:
+            if not isadmin:
+                bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
+                return
+            getUser = user_info
+            if getUser:
+                try:
+                   size = int(str(msgText).split(' ')[1])
+                   getUser['zips'] = size
+                   jdb.save_data_user(username,getUser)
+                   jdb.save()
+                   msg = f'<b>✅ Zips configurados a</b> {sizeof_fmt(size*1024*1024)} <b>por parte</b>'
+                   bot.sendMessage(update.message.chat.id,msg, parse_mode='HTML')
+                except:
+                   bot.sendMessage(update.message.chat.id,'<b>❌ Error:</b> <code>/zips tamaño_en_mb</code>', parse_mode='HTML')
+                return
+        if '/account' in msgText:
+            if not isadmin:
+                bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
+                return
+            try:
+                account = str(msgText).split(' ',2)[1].split(',')
+                user = account[0]
+                passw = account[1]
                 getUser = user_info
                 if getUser:
+                    getUser['moodle_user'] = user
+                    getUser['moodle_password'] = passw
+                    jdb.save_data_user(username,getUser)
+                    jdb.save()
                     statInfo = infos.createStat(username,getUser,jdb.is_admin(username))
                     bot.sendMessage(update.message.chat.id,statInfo, parse_mode='HTML')
-                    return
-            if '/zips' in msgText:
-                if not isadmin:
-                    bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
-                    return
+            except:
+                bot.sendMessage(update.message.chat.id,'<b>❌ Error:</b> <code>/account usuario,contraseña</code>', parse_mode='HTML')
+            return
+        if '/host' in msgText:
+            if not isadmin:
+                bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
+                return
+            try:
+                cmd = str(msgText).split(' ',2)
+                host = cmd[1]
                 getUser = user_info
                 if getUser:
-                    try:
-                       size = int(str(msgText).split(' ')[1])
-                       getUser['zips'] = size
-                       jdb.save_data_user(username,getUser)
-                       jdb.save()
-                       msg = f'<b>✅ Zips configurados a</b> {sizeof_fmt(size*1024*1024)} <b>por parte</b>'
-                       bot.sendMessage(update.message.chat.id,msg, parse_mode='HTML')
-                    except:
-                       bot.sendMessage(update.message.chat.id,'<b>❌ Error:</b> <code>/zips tamaño_en_mb</code>', parse_mode='HTML')
-                    return
-            if '/account' in msgText:
-                if not isadmin:
-                    bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
-                    return
-                try:
-                    account = str(msgText).split(' ',2)[1].split(',')
-                    user = account[0]
-                    passw = account[1]
-                    getUser = user_info
-                    if getUser:
-                        getUser['moodle_user'] = user
-                        getUser['moodle_password'] = passw
-                        jdb.save_data_user(username,getUser)
-                        jdb.save()
-                        statInfo = infos.createStat(username,getUser,jdb.is_admin(username))
-                        bot.sendMessage(update.message.chat.id,statInfo, parse_mode='HTML')
-                except:
-                    bot.sendMessage(update.message.chat.id,'<b>❌ Error:</b> <code>/account usuario,contraseña</code>', parse_mode='HTML')
+                    getUser['moodle_host'] = host
+                    jdb.save_data_user(username,getUser)
+                    jdb.save()
+                    statInfo = infos.createStat(username,getUser,jdb.is_admin(username))
+                    bot.sendMessage(update.message.chat.id,statInfo, parse_mode='HTML')
+            except:
+                bot.sendMessage(update.message.chat.id,'<b>❌ Error:</b> <code>/host url_del_moodle</code>', parse_mode='HTML')
+            return
+        if '/repoid' in msgText:
+            if not isadmin:
+                bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
                 return
-            if '/host' in msgText:
-                if not isadmin:
-                    bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
-                    return
-                try:
-                    cmd = str(msgText).split(' ',2)
-                    host = cmd[1]
-                    getUser = user_info
-                    if getUser:
-                        getUser['moodle_host'] = host
-                        jdb.save_data_user(username,getUser)
-                        jdb.save()
-                        statInfo = infos.createStat(username,getUser,jdb.is_admin(username))
-                        bot.sendMessage(update.message.chat.id,statInfo, parse_mode='HTML')
-                except:
-                    bot.sendMessage(update.message.chat.id,'<b>❌ Error:</b> <code>/host url_del_moodle</code>', parse_mode='HTML')
+            try:
+                cmd = str(msgText).split(' ',2)
+                repoid = int(cmd[1])
+                getUser = user_info
+                if getUser:
+                    getUser['moodle_repo_id'] = repoid
+                    jdb.save_data_user(username,getUser)
+                    jdb.save()
+                    statInfo = infos.createStat(username,getUser,jdb.is_admin(username))
+                    bot.sendMessage(update.message.chat.id,statInfo, parse_mode='HTML')
+            except:
+                bot.sendMessage(update.message.chat.id,'<b>❌ Error:</b> <code>/repoid id_del_repositorio</code>', parse_mode='HTML')
+            return
+        if '/tokenize_on' in msgText:
+            if not isadmin:
+                bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
                 return
-            if '/repoid' in msgText:
-                if not isadmin:
-                    bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
-                    return
-                try:
-                    cmd = str(msgText).split(' ',2)
-                    repoid = int(cmd[1])
-                    getUser = user_info
-                    if getUser:
-                        getUser['moodle_repo_id'] = repoid
-                        jdb.save_data_user(username,getUser)
-                        jdb.save()
-                        statInfo = infos.createStat(username,getUser,jdb.is_admin(username))
-                        bot.sendMessage(update.message.chat.id,statInfo, parse_mode='HTML')
-                except:
-                    bot.sendMessage(update.message.chat.id,'<b>❌ Error:</b> <code>/repoid id_del_repositorio</code>', parse_mode='HTML')
+            try:
+                getUser = user_info
+                if getUser:
+                    getUser['tokenize'] = 1
+                    jdb.save_data_user(username,getUser)
+                    jdb.save()
+                    statInfo = infos.createStat(username,getUser,jdb.is_admin(username))
+                    bot.sendMessage(update.message.chat.id,statInfo, parse_mode='HTML')
+            except:
+                bot.sendMessage(update.message.chat.id,'<b>❌ Error activando tokenize</b>', parse_mode='HTML')
+            return
+        if '/tokenize_off' in msgText:
+            if not isadmin:
+                bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
                 return
-            if '/tokenize_on' in msgText:
-                if not isadmin:
-                    bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
-                    return
-                try:
-                    getUser = user_info
-                    if getUser:
-                        getUser['tokenize'] = 1
-                        jdb.save_data_user(username,getUser)
-                        jdb.save()
-                        statInfo = infos.createStat(username,getUser,jdb.is_admin(username))
-                        bot.sendMessage(update.message.chat.id,statInfo, parse_mode='HTML')
-                except:
-                    bot.sendMessage(update.message.chat.id,'<b>❌ Error activando tokenize</b>', parse_mode='HTML')
+            try:
+                getUser = user_info
+                if getUser:
+                    getUser['tokenize'] = 0
+                    jdb.save_data_user(username,getUser)
+                    jdb.save()
+                    statInfo = infos.createStat(username,getUser,jdb.is_admin(username))
+                    bot.sendMessage(update.message.chat.id,statInfo, parse_mode='HTML')
+            except:
+                bot.sendMessage(update.message.chat.id,'<b>❌ Error desactivando tokenize</b>', parse_mode='HTML')
+            return
+        if '/cloud' in msgText:
+            if not isadmin:
+                bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
                 return
-            if '/tokenize_off' in msgText:
-                if not isadmin:
-                    bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
-                    return
-                try:
-                    getUser = user_info
-                    if getUser:
-                        getUser['tokenize'] = 0
-                        jdb.save_data_user(username,getUser)
-                        jdb.save()
-                        statInfo = infos.createStat(username,getUser,jdb.is_admin(username))
-                        bot.sendMessage(update.message.chat.id,statInfo, parse_mode='HTML')
-                except:
-                    bot.sendMessage(update.message.chat.id,'<b>❌ Error desactivando tokenize</b>', parse_mode='HTML')
+            try:
+                cmd = str(msgText).split(' ',2)
+                repoid = cmd[1]
+                getUser = user_info
+                if getUser:
+                    getUser['cloudtype'] = repoid
+                    jdb.save_data_user(username,getUser)
+                    jdb.save()
+                    statInfo = infos.createStat(username,getUser,jdb.is_admin(username))
+                    bot.sendMessage(update.message.chat.id,statInfo, parse_mode='HTML')
+            except:
+                bot.sendMessage(update.message.chat.id,'<b>❌ Error:</b> <code>/cloud (moodle o cloud)</code>', parse_mode='HTML')
+            return
+        if '/uptype' in msgText:
+            if not isadmin:
+                bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
                 return
-            if '/cloud' in msgText:
-                if not isadmin:
-                    bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
-                    return
-                try:
-                    cmd = str(msgText).split(' ',2)
-                    repoid = cmd[1]
-                    getUser = user_info
-                    if getUser:
-                        getUser['cloudtype'] = repoid
-                        jdb.save_data_user(username,getUser)
-                        jdb.save()
-                        statInfo = infos.createStat(username,getUser,jdb.is_admin(username))
-                        bot.sendMessage(update.message.chat.id,statInfo, parse_mode='HTML')
-                except:
-                    bot.sendMessage(update.message.chat.id,'<b>❌ Error:</b> <code>/cloud (moodle o cloud)</code>', parse_mode='HTML')
+            try:
+                cmd = str(msgText).split(' ',2)
+                type = cmd[1]
+                getUser = user_info
+                if getUser:
+                    getUser['uploadtype'] = type
+                    jdb.save_data_user(username,getUser)
+                    jdb.save()
+                    statInfo = infos.createStat(username,getUser,jdb.is_admin(username))
+                    bot.sendMessage(update.message.chat.id,statInfo, parse_mode='HTML')
+            except:
+                bot.sendMessage(update.message.chat.id,'<b>❌ Error:</b> <code>/uptype (evidence, draft, blog)</code>', parse_mode='HTML')
+            return
+        if '/dir' in msgText:
+            if not isadmin:
+                bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
                 return
-            if '/uptype' in msgText:
-                if not isadmin:
-                    bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
-                    return
-                try:
-                    cmd = str(msgText).split(' ',2)
-                    type = cmd[1]
-                    getUser = user_info
-                    if getUser:
-                        getUser['uploadtype'] = type
-                        jdb.save_data_user(username,getUser)
-                        jdb.save()
-                        statInfo = infos.createStat(username,getUser,jdb.is_admin(username))
-                        bot.sendMessage(update.message.chat.id,statInfo, parse_mode='HTML')
-                except:
-                    bot.sendMessage(update.message.chat.id,'<b>❌ Error:</b> <code>/uptype (evidence, draft, blog)</code>', parse_mode='HTML')
-                return
-            if '/dir' in msgText:
-                if not isadmin:
-                    bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
-                    return
-                try:
-                    cmd = str(msgText).split(' ',2)
-                    repoid = cmd[1]
-                    getUser = user_info
-                    if getUser:
-                        getUser['dir'] = repoid + '/'
-                        jdb.save_data_user(username,getUser)
-                        jdb.save()
-                        statInfo = infos.createStat(username,getUser,jdb.is_admin(username))
-                        bot.sendMessage(update.message.chat.id,statInfo, parse_mode='HTML')
-                except:
-                    bot.sendMessage(update.message.chat.id,'<b>❌ Error:</b> <code>/dir nombre_carpeta</code>', parse_mode='HTML')
-                return
-            if '/cancel_' in msgText:
-                try:
-                    cmd = str(msgText).split('_',2)
-                    tid = cmd[1]
-                    if tid in bot.threads:
-                        tcancel = bot.threads[tid]
-                        msg = tcancel.getStore('msg')
-                        tcancel.store('stop',True)
-                        time.sleep(2)
-                        bot.editMessageText(msg,'<b>❌ Tarea Cancelada</b>', parse_mode='HTML')
-                    else:
-                        bot.sendMessage(update.message.chat.id,'<b>❌ Proceso no encontrado o ya finalizado</b>', parse_mode='HTML')
-                except Exception as ex:
-                    print(str(ex))
-                    bot.sendMessage(update.message.chat.id,'<b>❌ Error al cancelar</b>', parse_mode='HTML')
-                return
-
-            message = bot.sendMessage(update.message.chat.id,'<b>⏳ Procesando...</b>', parse_mode='HTML')
-
-            thread.store('msg',message)
-
-            if '/start' in msgText:
-                # Obtener plataforma actual
-                platform_name = get_platform_name(user_info.get('moodle_host', ''))
-                
-                # Obtener estado del proxy
-                current_proxy = user_info.get('proxy', '')
-                proxy_status = f"┣⪼ 🔌 Proxy: <code>{current_proxy if current_proxy else 'Conexión directa'}</code>\n"
-                
-                # Mensaje según plataforma para duración de enlaces
-                duration_info = ""
-                if platform_name == 'CENED':
-                    duration_info = "┣⪼ ⏱️ Enlaces: 8-30 minutos\n"
-                elif platform_name == 'INSTEC':  # NUEVA PLATAFORMA
-                    duration_info = "┣⪼ ⏱️ Enlaces: Desconocido\n┣⪼ 🔐 Descarga vía cuenta\n"
+            try:
+                cmd = str(msgText).split(' ',2)
+                repoid = cmd[1]
+                getUser = user_info
+                if getUser:
+                    getUser['dir'] = repoid + '/'
+                    jdb.save_data_user(username,getUser)
+                    jdb.save()
+                    statInfo = infos.createStat(username,getUser,jdb.is_admin(username))
+                    bot.sendMessage(update.message.chat.id,statInfo, parse_mode='HTML')
+            except:
+                bot.sendMessage(update.message.chat.id,'<b>❌ Error:</b> <code>/dir nombre_carpeta</code>', parse_mode='HTML')
+            return
+        if '/cancel_' in msgText:
+            try:
+                cmd = str(msgText).split('_',2)
+                tid = cmd[1]
+                if tid in bot.threads:
+                    tcancel = bot.threads[tid]
+                    msg = tcancel.getStore('msg')
+                    tcancel.store('stop',True)
+                    time.sleep(2)
+                    bot.editMessageText(msg,'<b>❌ Tarea Cancelada</b>', parse_mode='HTML')
                 else:
-                    duration_info = "┣⪼ ⏱️ Enlaces: 3 días\n"
-                
-                if isadmin:
-                    welcome_text = f"""╭━━━━❰🤖 Bot de Moodle - ADMIN❱━➣
+                    bot.sendMessage(update.message.chat.id,'<b>❌ Proceso no encontrado o ya finalizado</b>', parse_mode='HTML')
+            except Exception as ex:
+                print(str(ex))
+                bot.sendMessage(update.message.chat.id,'<b>❌ Error al cancelar</b>', parse_mode='HTML')
+            return
+
+        message = bot.sendMessage(update.message.chat.id,'<b>⏳ Procesando...</b>', parse_mode='HTML')
+
+        thread.store('msg',message)
+
+        if '/start' in msgText:
+            # Obtener plataforma actual
+            platform_name = get_platform_name(user_info.get('moodle_host', ''))
+            
+            # Obtener estado del proxy
+            current_proxy = user_info.get('proxy', '')
+            proxy_status = f"┣⪼ 🔌 Proxy: <code>{current_proxy if current_proxy else 'Conexión directa'}</code>\n"
+            
+            # Mensaje según plataforma para duración de enlaces
+            duration_info = ""
+            if platform_name == 'CENED':
+                duration_info = "┣⪼ ⏱️ Enlaces: 8-30 minutos\n"
+            elif platform_name == 'INSTEC':  # NUEVA PLATAFORMA
+                duration_info = "┣⪼ ⏱️ Enlaces: Desconocido\n┣⪼ 🔐 Descarga vía cuenta\n"
+            else:
+                duration_info = "┣⪼ ⏱️ Enlaces: 3 días\n"
+            
+            if isadmin:
+                welcome_text = f"""╭━━━━❰🤖 Bot de Moodle - ADMIN❱━➣
 ┣⪼ 🚀 Subidas a Moodle/Cloud
 ┣⪼ 👨‍💻 Desarrollado por: @Eliel_21
 ┣⪼ 🏫 Plataforma: {platform_name}
@@ -1997,8 +1753,8 @@ def onmessage(update,bot:ObigramClient):
 ┣⪼ 📚 COMANDOS GENERALES:
 ┣⪼ /tutorial - Guía completa
 ╰━━━━━━━━━━━━━━━➣"""
-                else:
-                    welcome_text = f"""╭━━━━❰🤖 Bot de Moodle❱━➣
+            else:
+                welcome_text = f"""╭━━━━❰🤖 Bot de Moodle❱━➣
 ┣⪼ 🚀 Subidas a Moodle/Cloud
 ┣⪼ 👨‍💻 Desarrollado por: @Eliel_21
 ┣⪼ 🏫 Plataforma: {platform_name}
@@ -2016,129 +1772,98 @@ def onmessage(update,bot:ObigramClient):
 ┣⪼ /start - Información del bot
 ┣⪼ /tutorial - Guía completa
 ╰━━━━━━━━━━━━━━━➣"""
-                
-                bot.deleteMessage(message.chat.id, message.message_id)
-                bot.sendMessage(update.message.chat.id, welcome_text, parse_mode='HTML')
-            elif '/files' == msgText and user_info['cloudtype']=='moodle':
-                 if not isadmin:
-                    bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
-                    return
-                 proxy = ProxyCloud.parse(user_info['proxy'])
-                 client = MoodleClient(user_info['moodle_user'],
-                                       user_info['moodle_password'],
-                                       user_info['moodle_host'],
-                                       user_info['moodle_repo_id'],proxy=proxy)
-                 loged = client.login()
-                 if loged:
-                     files = client.getEvidences()
-                     filesInfo = infos.createFilesMsg(files)
-                     bot.editMessageText(message,filesInfo, parse_mode='HTML')
-                     client.logout()
-                 else:
-                    bot.editMessageText(message,'<b>❌ Error de conexión</b>\n• Verifique su cuenta\n• Servidor: '+client.path, parse_mode='HTML')
-            elif '/txt_' in msgText and user_info['cloudtype']=='moodle':
-                 if not isadmin:
-                    bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
-                    return
-                 findex = str(msgText).split('_')[1]
-                 findex = int(findex)
-                 proxy = ProxyCloud.parse(user_info['proxy'])
-                 client = MoodleClient(user_info['moodle_user'],
-                                       user_info['moodle_password'],
-                                       user_info['moodle_host'],
-                                       user_info['moodle_repo_id'],proxy=proxy)
-                 loged = client.login()
-                 if loged:
-                     evidences = client.getEvidences()
-                     if 0 <= findex < len(evidences):
-                         evindex = evidences[findex]
-                         txtname = evindex['name']+'.txt'
-                         
-                         bot.deleteMessage(message.chat.id, message.message_id)
-                         
-                         sendTxt(txtname, evindex['files'], update, bot)
-                     else:
-                         bot.editMessageText(message,'<b>❌ Índice no válido</b>', parse_mode='HTML')
-                     client.logout()
-                 else:
-                    bot.editMessageText(message,'<b>❌ Error de conexión</b>\n• Verifique su cuenta\n• Servidor: '+client.path, parse_mode='HTML')
-                 pass
-            elif '/del_' in msgText and user_info['cloudtype']=='moodle':
-                if not isadmin:
-                    bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
-                    return
-                findex = int(str(msgText).split('_')[1])
-                proxy = ProxyCloud.parse(user_info['proxy'])
-                client = MoodleClient(user_info['moodle_user'],
-                                       user_info['moodle_password'],
-                                       user_info['moodle_host'],
-                                       user_info['moodle_repo_id'],
-                                       proxy=proxy)
-                loged = client.login()
-                if loged:
-                    evfile = client.getEvidences()[findex]
-                    client.deleteEvidence(evfile)
-                    client.logout()
-                    bot.editMessageText(message,'<b>🗑️ Archivo eliminado</b>', parse_mode='HTML')
-                else:
-                    bot.editMessageText(message,'<b>❌ Error de conexión</b>\n• Verifique su cuenta\n• Servidor: '+client.path, parse_mode='HTML')
-            elif '/delall' in msgText and user_info['cloudtype']=='moodle':
-                if not isadmin:
-                    bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
-                    return
-                proxy = ProxyCloud.parse(user_info['proxy'])
-                client = MoodleClient(user_info['moodle_user'],
-                                       user_info['moodle_password'],
-                                       user_info['moodle_host'],
-                                       user_info['moodle_repo_id'],
-                                       proxy=proxy)
-                loged = client.login()
-                if loged:
-                    evfiles = client.getEvidences()
-                    for item in evfiles:
-                    	client.deleteEvidence(item)
-                    client.logout()
-                    bot.editMessageText(message,'<b>🗑️ Todos los archivos eliminados</b>', parse_mode='HTML')
-                else:
-                    bot.editMessageText(message,'<b>❌ Error de conexión</b>\n• Verifique su cuenta\n• Servidor: '+client.path, parse_mode='HTML')       
-            elif 'http' in msgText:
-                url = msgText
-                ddl(update,bot,message,url,file_name='',thread=thread,jdb=jdb)
-            else:
-                bot.editMessageText(message,'<b>❌ No se pudo procesar el mensaje</b>', parse_mode='HTML')
-        
-        # ✅ SOLO AL FINAL: MANEJAR CALLBACKS SI ES UN CALLBACK_QUERY
-        if hasattr(update, 'callback_query') and update.callback_query:
-            callback_data = update.callback_query.data if update.callback_query.data else ''
             
-            # Verificar si es un callback de división
-            if callback_data and callback_data.startswith('split_'):
-                parts = callback_data.split('_')
-                if len(parts) >= 3:
-                    action = parts[1]  # 'yes' o 'no'
-                    cancel_id = parts[2]
-                    
-                    # Buscar el thread correspondiente
-                    if cancel_id in bot.threads:
-                        thread = bot.threads[cancel_id]
-                        
-                        if action == 'yes':
-                            thread.store('split_response', 'yes')
-                            bot.answerCallbackQuery(update.callback_query.id, "✅ Dividiendo en partes...")
-                        elif action == 'no':
-                            thread.store('split_response', 'no')
-                            bot.answerCallbackQuery(update.callback_query.id, "🔄 Continuando automático...")
-                        
-                        # Eliminar mensaje de callback
-                        try:
-                            bot.deleteMessage(update.callback_query.message.chat.id, 
-                                            update.callback_query.message.message_id)
-                        except:
-                            pass
-                return  # Salir después de manejar callback
-        
+            bot.deleteMessage(message.chat.id, message.message_id)
+            bot.sendMessage(update.message.chat.id, welcome_text, parse_mode='HTML')
+        elif '/files' == msgText and user_info['cloudtype']=='moodle':
+             if not isadmin:
+                bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
+                return
+             proxy = ProxyCloud.parse(user_info['proxy'])
+             client = MoodleClient(user_info['moodle_user'],
+                                   user_info['moodle_password'],
+                                   user_info['moodle_host'],
+                                   user_info['moodle_repo_id'],proxy=proxy)
+             loged = client.login()
+             if loged:
+                 files = client.getEvidences()
+                 filesInfo = infos.createFilesMsg(files)
+                 bot.editMessageText(message,filesInfo, parse_mode='HTML')
+                 client.logout()
+             else:
+                bot.editMessageText(message,'<b>❌ Error de conexión</b>\n• Verifique su cuenta\n• Servidor: '+client.path, parse_mode='HTML')
+        elif '/txt_' in msgText and user_info['cloudtype']=='moodle':
+             if not isadmin:
+                bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
+                return
+             findex = str(msgText).split('_')[1]
+             findex = int(findex)
+             proxy = ProxyCloud.parse(user_info['proxy'])
+             client = MoodleClient(user_info['moodle_user'],
+                                   user_info['moodle_password'],
+                                   user_info['moodle_host'],
+                                   user_info['moodle_repo_id'],proxy=proxy)
+             loged = client.login()
+             if loged:
+                 evidences = client.getEvidences()
+                 if 0 <= findex < len(evidences):
+                     evindex = evidences[findex]
+                     txtname = evindex['name']+'.txt'
+                     
+                     bot.deleteMessage(message.chat.id, message.message_id)
+                     
+                     sendTxt(txtname, evindex['files'], update, bot)
+                 else:
+                     bot.editMessageText(message,'<b>❌ Índice no válido</b>', parse_mode='HTML')
+                 client.logout()
+             else:
+                bot.editMessageText(message,'<b>❌ Error de conexión</b>\n• Verifique su cuenta\n• Servidor: '+client.path, parse_mode='HTML')
+             pass
+        elif '/del_' in msgText and user_info['cloudtype']=='moodle':
+            if not isadmin:
+                bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
+                return
+            findex = int(str(msgText).split('_')[1])
+            proxy = ProxyCloud.parse(user_info['proxy'])
+            client = MoodleClient(user_info['moodle_user'],
+                                   user_info['moodle_password'],
+                                   user_info['moodle_host'],
+                                   user_info['moodle_repo_id'],
+                                   proxy=proxy)
+            loged = client.login()
+            if loged:
+                evfile = client.getEvidences()[findex]
+                client.deleteEvidence(evfile)
+                client.logout()
+                bot.editMessageText(message,'<b>🗑️ Archivo eliminado</b>', parse_mode='HTML')
+            else:
+                bot.editMessageText(message,'<b>❌ Error de conexión</b>\n• Verifique su cuenta\n• Servidor: '+client.path, parse_mode='HTML')
+        elif '/delall' in msgText and user_info['cloudtype']=='moodle':
+            if not isadmin:
+                bot.sendMessage(update.message.chat.id,'<b>❌ Comando restringido a administradores</b>', parse_mode='HTML')
+                return
+            proxy = ProxyCloud.parse(user_info['proxy'])
+            client = MoodleClient(user_info['moodle_user'],
+                                   user_info['moodle_password'],
+                                   user_info['moodle_host'],
+                                   user_info['moodle_repo_id'],
+                                   proxy=proxy)
+            loged = client.login()
+            if loged:
+                evfiles = client.getEvidences()
+                for item in evfiles:
+                	client.deleteEvidence(item)
+                client.logout()
+                bot.editMessageText(message,'<b>🗑️ Todos los archivos eliminados</b>', parse_mode='HTML')
+            else:
+                bot.editMessageText(message,'<b>❌ Error de conexión</b>\n• Verifique su cuenta\n• Servidor: '+client.path, parse_mode='HTML')       
+        elif 'http' in msgText:
+            url = msgText
+            ddl(update,bot,message,url,file_name='',thread=thread,jdb=jdb)
+        else:
+            bot.editMessageText(message,'<b>❌ No se pudo procesar el mensaje</b>', parse_mode='HTML')
     except Exception as ex:
-        print(f"Error en onmessage: {ex}")
+           print(str(ex))
 
 def start_health_server(port):
     try:

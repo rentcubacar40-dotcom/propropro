@@ -46,6 +46,11 @@ def get_cuba_time_formatted():
     
     return fecha_espanol
 
+def get_date_numeric():
+    """Obtiene la fecha actual en formato DD-MM-YY"""
+    cuba_time = datetime.datetime.now(CUBA_TZ)
+    return cuba_time.strftime("%d-%m-%y")  # Formato: 25-11-25
+
 def create_progress_bar(percentage, bars=15):
     """Crea barra de progreso estilo S1 con ⬢⬡"""
     filled = int(percentage / 100 * bars)
@@ -100,8 +105,8 @@ def save_upload_stats(jdb, username, file_size, original_filename, file_upload_c
             
         file_size_mb = file_size / (1024 * 1024)
         
-        # ✅ OBTENER HORA DE CUBA EN ESPAÑOL
-        current_time = get_cuba_time_formatted()
+        # ✅ OBTENER FECHA EN FORMATO NUMÉRICO (DD-MM-YY)
+        current_time = get_date_numeric()
         
         # DATOS ESTADÍSTICOS
         user_info['total_mb_used'] = user_info.get('total_mb_used', 0) + file_size_mb
@@ -116,7 +121,7 @@ def save_upload_stats(jdb, username, file_size, original_filename, file_upload_c
         jdb.save_data_user(username, user_info)
         jdb.save()
         
-        print(f"✅ Estadísticas guardadas para @{username}: {file_size_mb:.2f} MB - Hora Cuba: {current_time}")
+        print(f"✅ Estadísticas guardadas para @{username}: {file_size_mb:.2f} MB - Fecha: {current_time}")
         return True
         
     except Exception as e:
@@ -131,6 +136,43 @@ def get_user_stats(username, user_info):
     total_mb_used = user_info.get('total_mb_used', 0)
     last_upload = user_info.get('last_upload', 'Nunca')
     first_upload = user_info.get('first_upload', 'Nunca')
+    
+    # Convertir fechas de formato antiguo a nuevo si es necesario
+    if last_upload != 'Nunca' and 'de' in last_upload:
+        # Intentar convertir formato antiguo a nuevo
+        try:
+            meses = {
+                'enero': '01', 'febrero': '02', 'marzo': '03', 'abril': '04',
+                'mayo': '05', 'junio': '06', 'julio': '07', 'agosto': '08',
+                'septiembre': '09', 'octubre': '10', 'noviembre': '11', 'diciembre': '12'
+            }
+            partes = last_upload.split(' de ')
+            dia = partes[0].strip()
+            mes_nombre = partes[1].strip()
+            año_completo = partes[2].split(' ')[0].strip()
+            año = año_completo[-2:]  # Tomar últimos 2 dígitos
+            mes = meses.get(mes_nombre.lower(), '01')
+            last_upload = f"{int(dia):02d}-{mes}-{año}"
+        except:
+            pass
+    
+    if first_upload != 'Nunca' and 'de' in first_upload:
+        # Intentar convertir formato antiguo a nuevo
+        try:
+            meses = {
+                'enero': '01', 'febrero': '02', 'marzo': '03', 'abril': '04',
+                'mayo': '05', 'junio': '06', 'julio': '07', 'agosto': '08',
+                'septiembre': '09', 'octubre': '10', 'noviembre': '11', 'diciembre': '12'
+            }
+            partes = first_upload.split(' de ')
+            dia = partes[0].strip()
+            mes_nombre = partes[1].strip()
+            año_completo = partes[2].split(' ')[0].strip()
+            año = año_completo[-2:]  # Tomar últimos 2 dígitos
+            mes = meses.get(mes_nombre.lower(), '01')
+            first_upload = f"{int(dia):02d}-{mes}-{año}"
+        except:
+            pass
     
     # Plataforma actual
     platform = get_platform_name(user_info.get('moodle_host', ''))
@@ -173,43 +215,60 @@ def get_all_users_stats(jdb, admin_username):
         
         if uploads > 0:
             users_with_uploads += 1
+            
+            # Convertir última subida a formato numérico si es necesario
+            last_upload = user_data.get('last_upload', 'Nunca')
+            if last_upload != 'Nunca' and 'de' in last_upload:
+                try:
+                    meses = {
+                        'enero': '01', 'febrero': '02', 'marzo': '03', 'abril': '04',
+                        'mayo': '05', 'junio': '06', 'julio': '07', 'agosto': '08',
+                        'septiembre': '09', 'octubre': '10', 'noviembre': '11', 'diciembre': '12'
+                    }
+                    partes = last_upload.split(' de ')
+                    dia = partes[0].strip()
+                    mes_nombre = partes[1].strip()
+                    año_completo = partes[2].split(' ')[0].strip()
+                    año = año_completo[-2:]
+                    mes = meses.get(mes_nombre.lower(), '01')
+                    last_upload = f"{int(dia):02d}-{mes}-{año}"
+                except:
+                    pass
+            
             active_users_list.append({
                 'username': username,
                 'uploads': uploads,
                 'mb_used': mb_used,
-                'last_upload': user_data.get('last_upload', 'Nunca')
+                'last_upload': last_upload
             })
             
         # Considerar usuario activo si ha subido algo en los últimos 30 días
-        if user_data.get('last_upload'):
+        last_upload_date = user_data.get('last_upload', '')
+        if last_upload_date:
             try:
-                # Convertir fecha de español a datetime para cálculo
-                fecha_str = user_data['last_upload']
-                for mes_num, mes_nombre in {
-                    1: 'enero', 2: 'febrero', 3: 'marzo', 4: 'abril',
-                    5: 'mayo', 6: 'junio', 7: 'julio', 8: 'agosto',
-                    9: 'septiembre', 10: 'octubre', 11: 'noviembre', 12: 'diciembre'
-                }.items():
-                    if mes_nombre in fecha_str:
-                        # Extraer día, año y hora
-                        partes = fecha_str.split(' de ')
-                        dia = int(partes[0])
-                        año = int(partes[2].split(' ')[0])
-                        hora_str = partes[2].split(' ')[1] + ' ' + partes[2].split(' ')[2]
-                        
-                        # Convertir hora 12h a 24h
-                        from datetime import datetime
-                        hora_24 = datetime.strptime(hora_str, '%I:%M %p').strftime('%H:%M')
-                        
-                        # Crear datetime object
-                        fecha_dt = datetime(año, mes_num, dia, 
-                                          int(hora_24.split(':')[0]), 
-                                          int(hora_24.split(':')[1]))
-                        
-                        days_since_upload = (datetime.now() - fecha_dt).days
-                        if days_since_upload <= 30:
-                            active_users += 1
-                        break
+                # Convertir fecha a datetime para cálculo (soporta ambos formatos)
+                if 'de' in last_upload_date:
+                    # Formato antiguo: "25 de noviembre de 2025"
+                    meses = {
+                        'enero': 1, 'febrero': 2, 'febrero': 2, 'marzo': 3, 'abril': 4,
+                        'mayo': 5, 'junio': 6, 'julio': 7, 'agosto': 8,
+                        'septiembre': 9, 'octubre': 10, 'noviembre': 11, 'diciembre': 12
+                    }
+                    partes = last_upload_date.split(' de ')
+                    dia = int(partes[0])
+                    mes_nombre = partes[1]
+                    año = int(partes[2].split(' ')[0])
+                    mes = meses[mes_nombre]
+                    fecha_dt = datetime.datetime(año, mes, dia)
+                else:
+                    # Formato nuevo: "25-11-25"
+                    dia, mes, año = map(int, last_upload_date.split('-'))
+                    año = 2000 + año if año < 100 else año
+                    fecha_dt = datetime.datetime(año, mes, dia)
+                
+                days_since_upload = (datetime.datetime.now() - fecha_dt).days
+                if days_since_upload <= 30:
+                    active_users += 1
             except:
                 pass
     
@@ -232,6 +291,7 @@ def get_all_users_stats(jdb, admin_username):
         stats_message += "\n\n🏆 Top 10 Usuarios Más Activos:\n"
         for i, user in enumerate(top_users, 1):
             stats_message += f"{i}. @{user['username']} - {user['uploads']} subidas ({format_size(user['mb_used'] * 1024 * 1024)})\n"
+            stats_message += f"   Última: {user['last_upload']}\n"
     
     return stats_message
 
@@ -500,61 +560,230 @@ def processFile(update,bot,message,file,thread=None,jdb=None):
         base_name = original_filename.split('.')[0]
         file_extension = original_filename.split('.')[-1].lower() if '.' in original_filename else ''
         is_compressed_file = file_extension in ['zip', 'rar', '7z', 'tar', 'gz']
-            
+        
+        # Verificar si el archivo es grande y NO está ya comprimido
         if file_size > max_file_size and not is_compressed_file:
-            # Calcular cantidad de partes
+            
+            # ✅ NUEVA FUNCIONALIDAD: PREGUNTAR SI QUIERE RECIBIR EN PARTES
+            platform_name = get_platform_name(getUser['moodle_host'])
             total_parts = (file_size + max_file_size - 1) // max_file_size
             
-            # Mostrar información de compresión (MEJORADA con cantidad de partes)
-            platform_name = get_platform_name(getUser['moodle_host'])
+            # Mensaje único para todas las Moodles
+            option_msg = f"""╭━━━━❰📦 Archivo Grande Detectado❱━➣
+┣⪼ 📄 **Archivo:** `{original_filename}`
+┣⪼ 📊 **Tamaño:** {format_size(file_size)}
+┣⪼ ⚠️ **Límite plataforma:** {format_size(max_file_size)}
+┣⪼ 🗂️ **Partes necesarias:** {total_parts}
+│
+┣⪼ ❗ **Hemos detectado que ha superado el límite del tamaño**
+┣⪼ 💡 **Le recomendamos recibir el archivo por partes,**
+┣⪼ 🎯 **mayormente si usa la Moodle CENED.**
+│
+┣⪼ ❓ **¿Desea recibir el archivo dividido en {total_parts} partes?**
+┣⪼ 📤 (Si elige NO, se continuará con proceso automático)
+╰━━━━━━━━━━━━━━━➣"""
             
-            compresingInfo = format_s1_message("🗜️ Comprimiendo Archivo", [
-                f"📄 Archivo: {original_filename}",
-                f"📦 Tamaño original: {sizeof_fmt(file_size)}",
-                f"🗂️ Partes: {total_parts} de {sizeof_fmt(max_file_size)} c/u",
-                f"🏫 Plataforma: {platform_name}"
-            ])
+            # Enviar opciones con botones inline
+            from pyobigram.client import InlineKeyboard, InlineKeyboardButton
+            keyboard = InlineKeyboard(row_width=2)
+            keyboard.add(
+                InlineKeyboardButton("✅ Sí, dividir en partes", callback_data=f"split_yes_{thread.cancel_id}"),
+                InlineKeyboardButton("❌ No, continuar automático", callback_data=f"split_no_{thread.cancel_id}")
+            )
             
-            bot.editMessageText(message, compresingInfo)
+            # Guardar información para callback
+            thread.store('split_question', {
+                'original_filename': original_filename,
+                'file_size': file_size,
+                'max_file_size': max_file_size,
+                'file_path': file,
+                'base_name': base_name,
+                'total_parts': total_parts,
+                'platform': platform_name
+            })
             
-            # CREAR ARCHIVO TEMPORAL CON NOMBRE CORRECTO
-            temp_dir = "temp_" + createID()
-            os.makedirs(temp_dir, exist_ok=True)
+            # Enviar mensaje con pregunta
+            bot.editMessageText(message, option_msg)
+            question_msg = bot.sendMessage(
+                message.chat.id,
+                "**Seleccione una opción:** 👇",
+                reply_markup=keyboard
+            )
             
-            # Copiar el archivo a un directorio temporal con su nombre original
-            temp_file_path = os.path.join(temp_dir, original_filename)
-            import shutil
-            shutil.copy2(file, temp_file_path)
+            # ✅ ESPERAR RESPUESTA OBLIGATORIAMENTE (sin timeout)
+            user_wants_split = None  # None = esperando, True = sí, False = no
             
-            zipname = base_name + createID()
-            mult_file = zipfile.MultiFile(zipname, max_file_size)
+            while True:
+                if thread.getStore('split_response'):
+                    response = thread.getStore('split_response')
+                    thread.store('split_response', None)
+                    
+                    if response == 'yes':
+                        user_wants_split = True
+                    elif response == 'no':
+                        user_wants_split = False
+                    break
+                
+                # Verificar si el usuario canceló el proceso
+                if thread.getStore('stop'):
+                    # Limpiar mensaje de pregunta
+                    try:
+                        bot.deleteMessage(question_msg.chat.id, question_msg.message_id)
+                    except:
+                        pass
+                    return
+                
+                time.sleep(0.5)  # Pequeña pausa
             
-            # CREAR ZIP CON EL ARCHIVO Y SU NOMBRE ORIGINAL
-            with zipfile.ZipFile(mult_file, mode='w', compression=zipfile.ZIP_DEFLATED) as zipf:
-                # Agregar el archivo con su nombre original preservado
-                zipf.write(temp_file_path, arcname=original_filename)
-            
-            mult_file.close()
-            
-            # LIMPIAR ARCHIVO TEMPORAL
+            # Eliminar mensaje de pregunta
             try:
-                shutil.rmtree(temp_dir)
-            except: pass
+                bot.deleteMessage(question_msg.chat.id, question_msg.message_id)
+            except:
+                pass
             
-            # Usar el nombre base original para la subida
-            client = processUploadFiles(original_filename, file_size, mult_file.files, update, bot, message, thread=thread, jdb=jdb)
+            # Si eligió NO, continuar con proceso automático normal
+            if user_wants_split == False:
+                bot.editMessageText(message, "🔄 **Continuando con proceso automático...**")
+                
+                # ✅ PROCESO AUTOMÁTICO NORMAL (tu código actual)
+                compresingInfo = format_s1_message("🗜️ Comprimiendo Archivo", [
+                    f"📄 Archivo: {original_filename}",
+                    f"📦 Tamaño original: {sizeof_fmt(file_size)}",
+                    f"🗂️ Partes: {total_parts}",  # ✅ CAMBIADO: Solo cantidad de partes
+                    f"🏫 Plataforma: {platform_name}"
+                ])
+                
+                bot.editMessageText(message, compresingInfo)
+                
+                # CREAR ARCHIVO TEMPORAL CON NOMBRE CORRECTO
+                temp_dir = "temp_" + createID()
+                os.makedirs(temp_dir, exist_ok=True)
+                
+                # Copiar el archivo a un directorio temporal con su nombre original
+                temp_file_path = os.path.join(temp_dir, original_filename)
+                import shutil
+                shutil.copy2(file, temp_file_path)
+                
+                zipname = base_name + createID()
+                mult_file = zipfile.MultiFile(zipname, max_file_size)
+                
+                # CREAR ZIP CON EL ARCHIVO Y SU NOMBRE ORIGINAL
+                with zipfile.ZipFile(mult_file, mode='w', compression=zipfile.ZIP_DEFLATED) as zipf:
+                    # Agregar el archivo con su nombre original preservado
+                    zipf.write(temp_file_path, arcname=original_filename)
+                
+                mult_file.close()
+                
+                # LIMPIAR ARCHIVO TEMPORAL
+                try:
+                    shutil.rmtree(temp_dir)
+                except: pass
+                
+                # Usar el nombre base original para la subida
+                client = processUploadFiles(original_filename, file_size, mult_file.files, update, bot, message, thread=thread, jdb=jdb)
+                
+                try:
+                    os.unlink(file)
+                except:pass
+                file_upload_count = len(mult_file.files)
+                
+                # LIMPIAR ARCHIVOS TEMPORALES ZIP
+                try:
+                    for zip_file in mult_file.files:
+                        if os.path.exists(zip_file):
+                            os.unlink(zip_file)
+                except:pass
             
-            try:
-                os.unlink(file)
-            except:pass
-            file_upload_count = len(mult_file.files)
-            
-            # LIMPIAR ARCHIVOS TEMPORALES ZIP
-            try:
-                for zip_file in mult_file.files:
-                    if os.path.exists(zip_file):
-                        os.unlink(zip_file)
-            except:pass
+            elif user_wants_split == True:
+                # ✅ USUARIO QUIERE RECIBIR PARTES
+                bot.editMessageText(message, "🔪 **Dividiendo archivo en partes...**")
+                
+                # Crear directorio temporal para partes
+                temp_split_dir = "split_" + createID()
+                os.makedirs(temp_split_dir, exist_ok=True)
+                
+                # Dividir archivo en partes binarias
+                part_files = []
+                with open(file, 'rb') as f:
+                    part_num = 1
+                    
+                    while True:
+                        # Leer chunk del tamaño máximo
+                        chunk = f.read(max_file_size)
+                        if not chunk:
+                            break
+                        
+                        # Crear nombre de parte manteniendo extensión
+                        if '.' in original_filename:
+                            name_parts = original_filename.rsplit('.', 1)
+                            part_name = f"{name_parts[0]}_part{part_num:03d}.{name_parts[1]}"
+                        else:
+                            part_name = f"{original_filename}_part{part_num:03d}"
+                        
+                        part_path = os.path.join(temp_split_dir, part_name)
+                        
+                        # Escribir parte
+                        with open(part_path, 'wb') as part_file:
+                            part_file.write(chunk)
+                        
+                        part_files.append({
+                            'path': part_path,
+                            'name': part_name,
+                            'size': len(chunk),
+                            'part': part_num
+                        })
+                        
+                        part_num += 1
+                
+                # Mostrar información de partes creadas
+                split_info = format_s1_message("✅ Partes Creadas", [
+                    f"📄 Archivo original: {original_filename}",
+                    f"📊 Tamaño total: {format_size(file_size)}",
+                    f"🗂️ Partes creadas: {len(part_files)}",
+                    f"📏 Tamaño por parte: ~{format_size(max_file_size)}"
+                ])
+                
+                bot.editMessageText(message, split_info)
+                
+                # Enviar cada parte como documento
+                for i, part in enumerate(part_files, 1):
+                    try:
+                        # Mostrar progreso
+                        progress_msg = f"**Enviando parte {i}/{len(part_files)}**\n`{part['name']}`"
+                        
+                        if i % 3 == 0 or i == len(part_files):
+                            bot.editMessageText(message, progress_msg)
+                        
+                        # Enviar archivo
+                        with open(part['path'], 'rb') as part_file:
+                            bot.sendDocument(
+                                chat_id=message.chat.id,
+                                document=part_file,
+                                caption=f"**Parte {i}/{len(part_files)}** - {format_size(part['size'])}"
+                            )
+                        
+                    except Exception as e:
+                        print(f"Error enviando parte {i}: {e}")
+                        continue
+                
+                # Mensaje final simple
+                bot.editMessageText(message, f"✅ **{len(part_files)} partes enviadas correctamente**")
+                
+                # Limpiar archivos temporales
+                try:
+                    for part in part_files:
+                        if os.path.exists(part['path']):
+                            os.unlink(part['path'])
+                    
+                    if os.path.exists(temp_split_dir):
+                        os.rmdir(temp_split_dir)
+                    
+                    if os.path.exists(file):
+                        os.unlink(file)
+                except:
+                    pass
+                
+                return  # Terminar aquí
                         
         else:
             # Para archivos pequeños o ya comprimidos, usar el nombre original
@@ -831,6 +1060,37 @@ def test_moodle_connection(user_info):
 
 def onmessage(update,bot:ObigramClient):
     try:
+        # ✅ PRIMERO MANEJAR CALLBACKS DE DIVISIÓN
+        if update.callback_query:
+            callback_data = update.callback_query.data
+            
+            # Verificar si es un callback de división
+            if callback_data.startswith('split_'):
+                parts = callback_data.split('_')
+                action = parts[1]  # 'yes' o 'no'
+                cancel_id = parts[2] if len(parts) > 2 else ''
+                
+                # Buscar el thread correspondiente
+                if cancel_id in bot.threads:
+                    thread = bot.threads[cancel_id]
+                    
+                    if action == 'yes':
+                        thread.store('split_response', 'yes')
+                        bot.answerCallbackQuery(update.callback_query.id, "✅ Dividiendo en partes...")
+                    elif action == 'no':
+                        thread.store('split_response', 'no')
+                        bot.answerCallbackQuery(update.callback_query.id, "🔄 Continuando automático...")
+                    
+                    # Eliminar mensaje de callback
+                    try:
+                        bot.deleteMessage(update.callback_query.message.chat.id, 
+                                        update.callback_query.message.message_id)
+                    except:
+                        pass
+                    
+                return
+        
+        # Continuar con el resto del código...
         thread = bot.this_thread
         username = update.message.sender.username
         tl_admin_user = os.environ.get('tl_admin_user','Eliel_21')
@@ -1171,7 +1431,6 @@ def onmessage(update,bot:ObigramClient):
                 bot.sendMessage(update.message.chat.id, f'<b>❌ Error:</b> {str(e)}', parse_mode='HTML')
             return
 
-        # ... (el resto de tu código existente se mantiene igual)
         # COMANDOS DE CONFIGURACIÓN RÁPIDA PARA ADMIN
         if '/moodle_eva' in msgText and isadmin:
             user_info['moodle_host'] = 'https://eva.uo.edu.cu/'

@@ -18,7 +18,7 @@ import NexCloudClient
 import pytz
 
 from pydownloader.downloader import Downloader
-from ProxyCloud import ProxyCloud
+import ProxyCloud
 import socket
 import S5Crypto
 import threading

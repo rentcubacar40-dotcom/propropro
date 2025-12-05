@@ -1,4 +1,3 @@
-requests
 requests[socks] 
 python-telegram-bot 
 bs4 
@@ -17,4 +16,5 @@ aiohttp
 yarl
 mega.py
 pytz
+
 

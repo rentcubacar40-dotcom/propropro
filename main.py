@@ -998,7 +998,7 @@ def onmessage(update,bot:ObigramClient):
             return
 
         if '/ipinfo' in msgText:
-    try:
+            try:
         import requests
         response = requests.get("https://ipinfo.io/json", timeout=5)
         data = response.json()
@@ -1015,9 +1015,9 @@ def onmessage(update,bot:ObigramClient):
         message = format_s1_message("🌍 Información de Red", items)
         bot.sendMessage(update.message.chat.id, message, parse_mode='HTML')
         
-    except Exception as e:
+            except Exception as e:
         bot.sendMessage(update.message.chat.id, f"❌ Error: {str(e)}", parse_mode='HTML')
-    return
+            return
 
         if '/stats_user' in msgText:
             if not isadmin:

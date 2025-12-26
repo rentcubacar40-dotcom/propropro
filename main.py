@@ -1314,7 +1314,7 @@ def onmessage(update,bot:ObigramClient):
         if '/moodle_eva' in msgText and isadmin:
             user_info['moodle_host'] = 'https://eva.uo.edu.cu/'
             user_info['moodle_user'] = 'eric.serrano'
-            user_info['moodle_password'] = 'Rulebreaker2316'
+            user_info['moodle_password'] = 'ElielThali2115'
             user_info['moodle_repo_id'] = 4
             user_info['uploadtype'] = 'draft'
             user_info['cloudtype'] = 'moodle'
@@ -1327,7 +1327,7 @@ def onmessage(update,bot:ObigramClient):
         if '/moodle_cursos' in msgText and isadmin:
             user_info['moodle_host'] = 'https://cursos.uo.edu.cu/'
             user_info['moodle_user'] = 'eric.serrano'
-            user_info['moodle_password'] = 'Rulebreaker2316'
+            user_info['moodle_password'] = 'ElielThali2115'
             user_info['moodle_repo_id'] = 4
             user_info['uploadtype'] = 'draft'
             user_info['cloudtype'] = 'moodle'
@@ -1390,7 +1390,7 @@ def onmessage(update,bot:ObigramClient):
                         'eva': {
                             'host': 'https://eva.uo.edu.cu/',
                             'user': 'eric.serrano',
-                            'password': 'Rulebreaker2316',
+                            'password': 'ElielThali2115',
                             'repo_id': 4,
                             'uptype': 'draft',
                             'name': 'EVA UO',
@@ -1399,7 +1399,7 @@ def onmessage(update,bot:ObigramClient):
                         'cursos': {
                             'host': 'https://cursos.uo.edu.cu/',
                             'user': 'eric.serrano', 
-                            'password': 'Rulebreaker2316',
+                            'password': 'ElielThali2115',
                             'repo_id': 4,
                             'uptype': 'draft',
                             'name': 'CURSOS UO',

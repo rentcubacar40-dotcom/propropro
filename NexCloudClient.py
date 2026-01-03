@@ -41,7 +41,7 @@ class NexCloudClient(object):
         return False
 
     def upload_file(self,file,path='',progressfunc=None,args=(),tokenize=False):
-        files = self.path + 'index.php/apps/files/'
+        files = self.path + 'apps/files/files/13496283?dir=/'
         filepath = str(file).split('/')[-1]
         uploadUrl = self.path + 'remote.php/webdav/'+ path + filepath
         resp = self.session.get(files)
@@ -89,4 +89,5 @@ class NexCloudClient(object):
             retData = {'upload':False,'name':filepath,'msg':file + ' Exist!','url':str(url)}
         if resp.status_code == 409:
             retData = {'upload':False,'msg':'Not ' + user + ' Folder Existent!','name':filepath}
+
         return retData
